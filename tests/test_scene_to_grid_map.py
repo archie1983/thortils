@@ -13,7 +13,7 @@ from thortils.grid_map import GridMap
 
 
 def test_scene_to_grid_map():
-    floor_plan = "FloorPlan1"
+    floor_plan = "FloorPlan22"
     scene_info = SceneDataset.load_single("../scenes", floor_plan)
     controller = launch_controller({"scene":floor_plan})
     grid_map = convert_scene_to_grid_map(controller, floor_plan, 0.25)
@@ -61,5 +61,5 @@ def test_grid_map_save_load():
 
 
 if __name__ == "__main__":
-    # test_scene_to_grid_map()
+    test_scene_to_grid_map()
     test_grid_map_save_load()

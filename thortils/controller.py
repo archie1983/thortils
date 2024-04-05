@@ -30,7 +30,8 @@ def thor_get(event, *keys):
         return event.metadata
 
 def thor_scene_from_controller(controller):
-    return controller.scene.split("_")[0]
+    #return controller.scene.split("_")[0]
+    return "NAME_REMOVED"
 
 def thor_grid_size_from_controller(controller):
     return thor_controller_param(controller, "gridSize")

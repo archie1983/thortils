@@ -273,6 +273,8 @@ class Mapper3D:
         color, depth = tt.vision.thor_rgbd(event)
         camera_pose = tt.thor_camera_pose(event, as_tuple=True)
         self._map.add_from_rgbd(color, depth, self.intrinsic, camera_pose, **kwargs)
+        
+        print("AE::::::::::;;")
 
     def automate(self, num_stops=20, num_rotates=4,
                  v_angles=constants.V_ANGLES,
@@ -292,6 +294,7 @@ class Mapper3D:
         Will reset the agent to the initial pose after finish.
 
         After finish, you can access the map through the map attribute."""
+        print("AE:::: auto")
         rnd = random.Random(seed)
 
         initial_agent_pose = tt.thor_agent_pose(self.controller)

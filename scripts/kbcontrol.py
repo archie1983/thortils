@@ -6,6 +6,8 @@ from thortils.utils import getch
 import argparse
 import time
 
+import prior
+
 def print_controls(controls):
     reverse = {controls[k]:k for k in controls}
     ss =f"""
@@ -43,6 +45,12 @@ def main(init_func=None, step_func=None):
         "c": "LookDown"
     }
     print_controls(controls)
+
+    dataset = prior.load_dataset("procthor-10k")
+    house = dataset["train"][3]
+    args.scene = house
+
+    print(args.scene)
 
     controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
     if init_func is not None:

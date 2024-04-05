@@ -88,6 +88,7 @@ def convert_scene_to_grid_map(controller_or_reachable_positions,
     Args:
         controller_or_reachable_positions: Either a Controller,
         or reachable positions (output of thor_reachable_positions)"""
+
     if isinstance(controller_or_reachable_positions, Controller):
         controller = controller_or_reachable_positions
         x, z = thor_reachable_positions(controller, by_axes=True)

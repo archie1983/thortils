@@ -54,7 +54,8 @@ from .scene import (robothor_scene_names,
                     ithor_scene_names,
                     ithor_scene_type,
                     convert_scene_to_grid_map,
-                    proper_convert_scene_to_grid_map)
+                    proper_convert_scene_to_grid_map,
+                    proper_convert_scene_to_grid_map_and_poses)
 
 from .navigation import compute_spl, spl_ratio
 

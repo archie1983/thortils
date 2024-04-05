@@ -144,6 +144,7 @@ def convert_scene_to_grid_map(controller_or_reachable_positions,
 
     return grid_map
 
+observed_objs_at_random_explored_positions = dict()
 
 def proper_convert_scene_to_grid_map(controller,
                                      floor_cut=0.1,
@@ -163,8 +164,33 @@ def proper_convert_scene_to_grid_map(controller,
     mapper.automate(**kwargs)
     grid_map = mapper.get_grid_map(floor_cut=floor_cut,
                                    ceiling_cut=ceiling_cut)
+
+    observed_objs_at_random_explored_positions = mapper.get_observed_objs_from_exploration()
+
     return grid_map
 
+def proper_convert_scene_to_grid_map_and_poses(controller,
+                                     floor_cut=0.1,
+                                     ceiling_cut=1.0,
+                                     **kwargs):
+    """
+    kwargs are optional arguments for Mapper3D.automate.
+    Includes:
+        num_stops=20,
+        num_rotates=4,
+        sep=1.25,
+        downsample=True,
+        **kwargs):
+    """
+    # Will use Mapper3D
+    mapper = Mapper3D(controller)
+    mapper.automate(**kwargs)
+    grid_map = mapper.get_grid_map(floor_cut=floor_cut,
+                                   ceiling_cut=ceiling_cut)
+
+    observed_objs_at_random_explored_positions = mapper.get_observed_objs_from_exploration()
+
+    return (grid_map, observed_objs_at_random_explored_positions)
 
 def match_scene_name(scene_name):
     """

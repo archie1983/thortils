@@ -261,6 +261,7 @@ class Mapper3D:
         self.controller = controller
         self.intrinsic = pj.thor_camera_intrinsic(controller)
         self._map = Map3D()
+        self.visible_objs_by_random_pose = dict()
 
     @property
     def map(self):
@@ -274,7 +275,24 @@ class Mapper3D:
         camera_pose = tt.thor_camera_pose(event, as_tuple=True)
         self._map.add_from_rgbd(color, depth, self.intrinsic, camera_pose, **kwargs)
         
-        print("AE::::::::::;;")
+        #print(camera_pose)
+        self.visible_objs_by_random_pose[camera_pose] = self.get_visible_objects()
+
+    def get_observed_objs_from_exploration(self):
+        return self.visible_objs_by_random_pose
+
+    # Store visible objects in the self.visible_objects collection and print them out if needed
+    def get_visible_objects(self, print_objects = False):
+        objects = self.controller.last_event.metadata['objects']
+        visible_objects = []
+
+        for obj in objects:
+            if obj['visible']:
+                if print_objects:
+                    print(obj['objectType'] + " : " + str(obj['position']))
+                visible_objects.append(obj)
+
+        return visible_objects
 
     def automate(self, num_stops=20, num_rotates=4,
                  v_angles=constants.V_ANGLES,
@@ -294,7 +312,6 @@ class Mapper3D:
         Will reset the agent to the initial pose after finish.
 
         After finish, you can access the map through the map attribute."""
-        print("AE:::: auto")
         rnd = random.Random(seed)
 
         initial_agent_pose = tt.thor_agent_pose(self.controller)

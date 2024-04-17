@@ -8,6 +8,48 @@ import time
 
 import prior
 
+from shapely.geometry import Point
+from shapely.geometry.polygon import Polygon
+
+point = Point(0.5, 0.5)
+polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+print(polygon.contains(point))
+
+def is_point_inside_room(point_to_test, room_polygon):
+    (x, y, z) = point_to_test
+    point = Point(x, z)
+    polygon = Polygon(room_polygon)
+    return polygon.contains(point)
+
+def what_room_is_point_in(rooms, point):
+    for room in rooms:
+        if is_point_inside_room(point, room[1]):
+            return room[0]
+    return "NONE"
+
+def get_rooms(house):
+    rooms = []
+    for room in house["rooms"]:
+        room_poly = [(corner["x"], corner["z"]) for corner in room["floorPolygon"]]
+        #print(room["roomType"] + " # " + str(room["floorPolygon"]))
+        #print(room["roomType"] + " ?? " + str(room_poly))
+        rooms.append((room["roomType"], room_poly))
+
+    #print(rooms)
+
+    for room in rooms:
+        print(room[0])
+    return rooms
+
+def get_visible_object_names(event):
+    vis_objs = []
+    objs = thortils.thor_visible_objects(event)
+
+    for obj in objs:
+        vis_objs.append(obj['objectType'])
+
+    return vis_objs
+
 def print_controls(controls):
     reverse = {controls[k]:k for k in controls}
     ss =f"""
@@ -47,12 +89,13 @@ def main(init_func=None, step_func=None):
     print_controls(controls)
 
     dataset = prior.load_dataset("procthor-10k")
-    house = dataset["train"][3]
+    house = dataset["train"][26]
     args.scene = house
 
-    print(args.scene)
+    rooms = get_rooms(house)
 
-    controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
+    #controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
+    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0})
     if init_func is not None:
         config = init_func(controller)
 
@@ -70,7 +113,11 @@ def main(init_func=None, step_func=None):
             if step_func is not None:
                 step_func(event, config)
 
-            print("{} | Agent pose: {}".format(k, thortils.thor_agent_pose(controller, as_tuple=True)))
+            pose = thortils.thor_agent_pose(controller, as_tuple=True)
+            #print(pose)
+            (p, r) = pose
+            objs = get_visible_object_names(event)
+            print("{} | Agent pose: {}".format(k, pose) + " Room: " + what_room_is_point_in(rooms, p) + " ## " + str(objs))
 
 if __name__ == "__main__":
     main()

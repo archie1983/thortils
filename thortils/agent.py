@@ -1,5 +1,5 @@
 # Copyright 2022 Kaiyu Zheng
-# 
+#
 # Usage of this file is licensed under the MIT License.
 
 import numpy as np
@@ -134,9 +134,11 @@ def thor_place_agent_randomly(controller,
         pos = rnd.sample(reachable_positions, 1)[0]
     pitch = rnd.sample(v_angles, 1)[0]
     yaw = rnd.sample(h_angles, 1)[0]
+
     return controller.step(action="Teleport",
                            position=dict(x=pos[0], y=agent_pose[0]['y'], z=pos[1]),
-                           rotation=dict(x=agent_pose[1]['x'], y=yaw, z=agent_pose[1]['z']),
+                           #rotation=dict(x=agent_pose[1]['x'], y=yaw, z=agent_pose[1]['z']),
+                           rotation=dict(x=0.0, y=yaw, z=0.0),
                            horizon=pitch,
                            standing=True)
 

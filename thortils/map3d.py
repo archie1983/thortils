@@ -1,5 +1,5 @@
 # Copyright 2022 Kaiyu Zheng
-# 
+#
 # Usage of this file is licensed under the MIT License.
 
 import random
@@ -274,7 +274,7 @@ class Mapper3D:
         color, depth = tt.vision.thor_rgbd(event)
         camera_pose = tt.thor_camera_pose(event, as_tuple=True)
         self._map.add_from_rgbd(color, depth, self.intrinsic, camera_pose, **kwargs)
-        
+
         #print(camera_pose)
         self.visible_objs_by_random_pose[camera_pose] = self.get_visible_objects()
 
@@ -283,14 +283,13 @@ class Mapper3D:
 
     # Store visible objects in the self.visible_objects collection and print them out if needed
     def get_visible_objects(self, print_objects = False):
-        objects = self.controller.last_event.metadata['objects']
+        objects = tt.thor_visible_objects(self.controller.last_event)
         visible_objects = []
 
         for obj in objects:
-            if obj['visible']:
-                if print_objects:
-                    print(obj['objectType'] + " : " + str(obj['position']))
-                visible_objects.append(obj)
+            if print_objects:
+                print(obj['objectType'] + " : " + str(obj['position']))
+            visible_objects.append(obj)
 
         return visible_objects
 

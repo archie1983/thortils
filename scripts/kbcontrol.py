@@ -89,7 +89,7 @@ def main(init_func=None, step_func=None):
     print_controls(controls)
 
     dataset = prior.load_dataset("procthor-10k")
-    house = dataset["train"][26]
+    house = dataset["train"][55]
     args.scene = house
 
     rooms = get_rooms(house)

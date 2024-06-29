@@ -1,5 +1,5 @@
 # Copyright 2022 Kaiyu Zheng
-# 
+#
 # Usage of this file is licensed under the MIT License.
 
 import re
@@ -172,6 +172,7 @@ def proper_convert_scene_to_grid_map(controller,
 def proper_convert_scene_to_grid_map_and_poses(controller,
                                      floor_cut=0.1,
                                      ceiling_cut=1.0,
+                                     scene_id="no_scene_id",
                                      **kwargs):
     """
     kwargs are optional arguments for Mapper3D.automate.
@@ -183,14 +184,15 @@ def proper_convert_scene_to_grid_map_and_poses(controller,
         **kwargs):
     """
     # Will use Mapper3D
-    mapper = Mapper3D(controller)
+    mapper = Mapper3D(controller, scene_id)
     mapper.automate(**kwargs)
     grid_map = mapper.get_grid_map(floor_cut=floor_cut,
                                    ceiling_cut=ceiling_cut)
 
     observed_objs_at_random_explored_positions = mapper.get_observed_objs_from_exploration()
+    front_views_at_random_explored_positions = mapper.get_front_view_images_from_exploration()
 
-    return (grid_map, observed_objs_at_random_explored_positions)
+    return (grid_map, observed_objs_at_random_explored_positions, front_views_at_random_explored_positions)
 
 def match_scene_name(scene_name):
     """

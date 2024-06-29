@@ -5,7 +5,7 @@
 import random
 import open3d as o3d
 import numpy as np
-import time
+import time, os, cv2
 from tqdm import tqdm
 
 import thortils.vision.projection as pj
@@ -257,11 +257,24 @@ class Mapper3D:
     """This is intended to be a convenience object for building
     a 3D map with one set of camera intrinsic parameters, and
     interfacing directly with ai2thor events."""
-    def __init__(self, controller):
+    def __init__(self, controller, scene_id = "no_scene_id"):
         self.controller = controller
         self.intrinsic = pj.thor_camera_intrinsic(controller)
         self._map = Map3D()
         self.visible_objs_by_random_pose = dict()
+        self.front_view_at_random_pose = dict()
+
+        # Counter and front view picture storage site for exploration pictures
+        self.cnt = 0
+        self.target_dir = "scene_pics/" + scene_id
+
+        # Adding 3rd party camera to the controller so that we can capture front view
+        event = self.controller.step(
+            action="AddThirdPartyCamera",
+            position=dict(x=-4.25, y=2, z=-2.5),
+            rotation=dict(x=90, y=0, z=0),
+            fieldOfView=120
+        )
 
     @property
     def map(self):
@@ -276,10 +289,17 @@ class Mapper3D:
         self._map.add_from_rgbd(color, depth, self.intrinsic, camera_pose, **kwargs)
 
         #print(camera_pose)
+        # Capture visbile objects at the given pose and the front view picture
         self.visible_objs_by_random_pose[camera_pose] = self.get_visible_objects()
+        self.front_view_at_random_pose[camera_pose] = self.get_front_view(True)
 
+    # Mechanism to retrieve observed objects at random camera poses during exploration
     def get_observed_objs_from_exploration(self):
         return self.visible_objs_by_random_pose
+
+    # Mechanism to retrieve front view images from exploration phase
+    def get_front_view_images_from_exploration(self):
+        return self.front_view_at_random_pose
 
     # Store visible objects in the self.visible_objects collection and print them out if needed
     def get_visible_objects(self, print_objects = False):
@@ -292,6 +312,32 @@ class Mapper3D:
             visible_objects.append(obj)
 
         return visible_objects
+
+    # Store the front view picture at the given pose and print out URL if needed
+    def get_front_view(self, print_url = False):
+        event = self.controller.last_event
+
+        #print(len(event.third_party_camera_frames[0]))
+        #print(event.third_party_camera_frames[0])
+        img = event.cv2img
+        #dst = cv2.resize(img, (target_size, target_size), interpolation=cv2.INTER_LANCZOS4)
+
+        #object_type = object_id.split("|")[0].lower()
+        #target_dir = os.path.join("images", scene_name, object_type)
+        #h = hashlib.md5()
+        #h.update(json.dumps(point, sort_keys=True).encode("utf8"))
+        #h.update(json.dumps(v, sort_keys=True).encode("utf8"))
+
+        self.cnt+=1
+        #print(self.controller.scene)
+        os.makedirs(self.target_dir, exist_ok=True)
+
+        img_url = os.path.join(self.target_dir, str(self.cnt) + ".png")
+
+        cv2.imwrite(img_url, img)
+
+        if (print_url):
+            print(img_url)
 
     def automate(self, num_stops=20, num_rotates=4,
                  v_angles=constants.V_ANGLES,

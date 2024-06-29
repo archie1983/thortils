@@ -4,7 +4,7 @@ import thortils
 import thortils.constants as constants
 from thortils.utils import getch
 import argparse
-import time
+import time, cv2, os
 
 import prior
 
@@ -70,6 +70,25 @@ def print_controls(controls):
     """
     print(ss)
 
+cnt = 0
+target_dir = "scene_pics"
+
+def store_frame(event):
+    global cnt
+    #print(len(event.third_party_camera_frames[0]))
+    #print(event.third_party_camera_frames[0])
+    img = event.cv2img
+    #dst = cv2.resize(img, (target_size, target_size), interpolation=cv2.INTER_LANCZOS4)
+
+    #object_type = object_id.split("|")[0].lower()
+    #target_dir = os.path.join("images", scene_name, object_type)
+    #h = hashlib.md5()
+    #h.update(json.dumps(point, sort_keys=True).encode("utf8"))
+    #h.update(json.dumps(v, sort_keys=True).encode("utf8"))
+
+    cnt+=1
+    os.makedirs(target_dir, exist_ok=True)
+    cv2.imwrite(os.path.join(target_dir, str(cnt) + ".png"), img)
 
 def main(init_func=None, step_func=None):
     parser = argparse.ArgumentParser(
@@ -96,6 +115,14 @@ def main(init_func=None, step_func=None):
 
     #controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
     controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0})
+
+    event = controller.step(
+        action="AddThirdPartyCamera",
+        position=dict(x=-4.25, y=2, z=-2.5),
+        rotation=dict(x=90, y=0, z=0),
+        fieldOfView=120
+    )
+
     if init_func is not None:
         config = init_func(controller)
 
@@ -117,6 +144,9 @@ def main(init_func=None, step_func=None):
             #print(pose)
             (p, r) = pose
             objs = get_visible_object_names(event)
+
+            store_frame(event)
+
             print("{} | Agent pose: {}".format(k, pose) + " Room: " + what_room_is_point_in(rooms, p) + " ## " + str(objs))
 
 if __name__ == "__main__":

@@ -291,7 +291,7 @@ class Mapper3D:
         #print(camera_pose)
         # Capture visbile objects at the given pose and the front view picture
         self.visible_objs_by_random_pose[camera_pose] = self.get_visible_objects()
-        self.front_view_at_random_pose[camera_pose] = self.get_front_view(True)
+        self.front_view_at_random_pose[camera_pose] = self.get_front_view()
 
     # Mechanism to retrieve observed objects at random camera poses during exploration
     def get_observed_objs_from_exploration(self):
@@ -338,6 +338,8 @@ class Mapper3D:
 
         if (print_url):
             print(img_url)
+
+        return img_url
 
     def automate(self, num_stops=20, num_rotates=4,
                  v_angles=constants.V_ANGLES,

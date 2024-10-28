@@ -138,3 +138,5 @@ RenderOption*.json
 ScreenCapture*.json
 ScreenCapture*.png
 ScreenCamera*.json
+
+scripts/scene_pics/

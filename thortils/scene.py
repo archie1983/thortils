@@ -201,6 +201,7 @@ def match_scene_name(scene_name):
 
     Returns a tuple of scene name and seed (or 'default') if we
     can match the format."""
+    #print(scene_name)
     m = re.match("^FloorPlan[0-9]+-([0-9]+|default)$", scene_name)
     if m is not None:
         return m.group().split("-")
@@ -224,6 +225,10 @@ class ThorSceneInfo:
 
         # builds a map from object type to set of object ids
         self._type_to_objid = {}
+
+        #objects = {obj["objectId"] : obj
+        #           for obj in self.objects}
+
         for objid in self.objects:
             objtype = self.objtype(objid)
             if objtype not in self._type_to_objid:
@@ -231,6 +236,7 @@ class ThorSceneInfo:
             self._type_to_objid[objtype].add(objid)
 
     def objtype(self, objid):
+        #print(objid)
         return self.objects[objid]["objectType"]
 
     def obj(self, objid):

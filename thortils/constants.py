@@ -1,5 +1,5 @@
 # Copyright 2022 Kaiyu Zheng
-# 
+#
 # Usage of this file is licensed under the MIT License.
 
 #-------------------------------------------------------------------------------
@@ -116,12 +116,17 @@ INTERACTIONS = ["PickupObject",
                 "CloseObject"]
 
 # Defines navigation actions, with parameters
+# AE: It is important to have rotate right and left movements before moveAhead
+# AE: to force the agent to look in the correct direction before starting to move in that direction.
+# AE: The above is not true. I investigated this because I didn't fully understand at the time
+# AE: the diagonal_ok parameter. Changing action sequence here makes no difference although it has
+# AE: been changed. Leaving this remark for future.
 def get_movement_params(step_size, v_rot, h_rot):
-    return {"MoveAhead"  :  {"moveMagnitude": step_size},
+    return {"RotateLeft" :  {"degrees": h_rot},
+            "RotateRight":  {"degrees": h_rot},
+            "MoveAhead"  :  {"moveMagnitude": step_size},
             "LookUp"     :  {"degrees": v_rot},
-            "LookDown"   :  {"degrees": v_rot},
-            "RotateLeft" :  {"degrees": h_rot},
-            "RotateRight":  {"degrees": h_rot}}
+            "LookDown"   :  {"degrees": v_rot}}
 MOVEMENT_PARAMS = get_movement_params(MOVE_STEP_SIZE,
                                       V_ROTATION,
                                       H_ROTATION)

@@ -11,9 +11,9 @@ import prior
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
-point = Point(0.5, 0.5)
-polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
-print(polygon.contains(point))
+#point = Point(0.5, 0.5)
+#polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+#print(polygon.contains(point))
 
 def is_point_inside_room(point_to_test, room_polygon):
     (x, y, z) = point_to_test

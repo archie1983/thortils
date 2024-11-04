@@ -283,7 +283,10 @@ def find_navigation_plan(start, goal, navigation_actions,
 
     # Map angles in start and goal to be within 0 to 360 (see top comments)
     start_rotation = normalize_angles(start[1])
+    #print("AE: goal: ", str(goal))
     goal_rotation = normalize_angles(goal[1])
+    #print("AE: goal_rotation after normalize: ", str(goal_rotation))
+    #print("AE: nav_actions: ", str(navigation_actions))
     start = (start[0], start_rotation)
     goal = (goal[0], goal_rotation)
 
@@ -306,6 +309,7 @@ def find_navigation_plan(start, goal, navigation_actions,
 
     while not worklist.isEmpty():
         current_pose = worklist.pop()
+        #print("AE: current_pose: ", current_pose)
         if debug:
             _expanded_poses.append(current_pose)
         if _round_pose(current_pose) in visited:
@@ -326,6 +330,14 @@ def find_navigation_plan(start, goal, navigation_actions,
             next_pose = transform_pose(current_pose, action,
                                        grid_size=grid_size,
                                        diagonal_ok=diagonal_ok)
+            # AE: Here we need to check not only that the next_pose is within reachable
+            # AE: positions, but also that we are facing in the direction that we moved to.
+            # AE: E.g., if we moved ahead then we must move in the direction that we are facing.
+            # AE: This can be achieved either by restricting the angles to (0, 90, 180, 270) if
+            # AE: we are moving in right angles. Or we could allow moving diagonally by setting
+            # AE: diagonal_ok = True. Since we set diagonal_ok to True earlier, we don't need to
+            # AE: worry about these extra checks for now, but I will leave this comment here for
+            # AE: future.
             if not _valid_pose(_round_pose(next_pose), reachable_positions):
                 continue
 
@@ -345,6 +357,7 @@ def find_navigation_plan(start, goal, navigation_actions,
 
 def get_shortest_path_to_object(controller, object_id,
                                 start_position, start_rotation,
+                                target_position = None,
                                 **kwargs):
     """
     Per this issue: https://github.com/allenai/ai2thor/issues/825
@@ -374,6 +387,11 @@ def get_shortest_path_to_object(controller, object_id,
     return_plan = kwargs.get("return_plan", False)
     as_tuples = kwargs.get("as_tuples", False)
 
+    #print("AE: v_angles: " + str(v_angles) + " # h_angles: " + str(h_angles)
+    #        + " # movement_params: " + str(movement_params) + " # goal_distance: " + str(goal_distance)
+    #        + " # diagonal_ok: " + str(diagonal_ok) + " # positions_only: " + str(positions_only)
+    #        + " # return_plan: " + str(return_plan) + " # as_tuples: " + str(as_tuples))
+
     # reachable positions; must round them to grids otherwise ai2thor has a bug.
     grid_size = controller.initialization_parameters["gridSize"]
     reachable_positions = [
@@ -394,7 +412,13 @@ def get_shortest_path_to_object(controller, object_id,
     # Shortest path!!!!
     #
     # The algorithm is pretty fast so calling twice won't be an issue
-    target_position = thor_object_pose(controller, object_id, as_tuple=True)
+
+    # Only set target_position from object ID if it hasn't been overridden in the input
+    if target_position is None:
+        target_position = thor_object_pose(controller, object_id, as_tuple=True)
+
+    #print("AE: tp: ", target_position, " # tps: ", thor_object_pose(controller, object_id, as_tuple=True))
+
     start_pose = (start_position, start_rotation)
     navigation_actions = get_navigation_actions(movement_params)
 
@@ -431,8 +455,12 @@ def get_shortest_path_to_object(controller, object_id,
         # Get the true goal pose, with correct pitch and yaw
         goal_pitch = _pitch_facing(last_position,
                                    target_position, v_angles)
+
+        #print("AE last_position: " + str(last_position) + " # target_position: " + str(target_position) + " # h_angles: " + str(h_angles))
+
         goal_yaw = _yaw_facing(last_position,
                                target_position, h_angles)
+        #print("AE goal_yaw: " + str(goal_yaw))
         goal_pose = (target_position, (goal_pitch, goal_yaw, start_rotation[2])) # roll is 0.0
         final_plan = find_navigation_plan(start_pose, goal_pose,
                                           navigation_actions,
@@ -511,6 +539,9 @@ def _yaw_facing(robot_position, target_position, angles):
     tx, _, tz = target_position
     yaw = to_degrees(math.atan2(tx - rx,
                                 tz - rz)) % 360
+
+    #print(" # AE: yaw in _yaw_facing: " + str(yaw) + " # rx: " + str(rx) + " # rz: " + str(rz) + " # tx: " + str(tx) + " # tz: " + str(tz))
+
     return closest(angles, yaw)
 
 

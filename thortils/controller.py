@@ -1,9 +1,10 @@
 # Copyright 2022 Kaiyu Zheng
-# 
+#
 # Usage of this file is licensed under the MIT License.
 
 from ai2thor.controller import Controller
 from . import constants
+from ai2thor.platform import CloudRendering
 
 def _resolve(event_or_controller):
     """Returns an event, whether the given parameter is an event (already)
@@ -47,24 +48,43 @@ def thor_controller_param(controller, param):
     return controller.initialization_parameters[param]
 
 def launch_controller(config):
-    controller = Controller(
-        scene                      = config["scene"],
-        agentMode                  = config.get("AGENT_MODE"                   ,constants.AGENT_MODE),
-        gridSize                   = config.get("GRID_SIZE"                    ,constants.GRID_SIZE),
-        visibilityDistance         = config.get("VISIBILITY_DISTANCE"          ,constants.VISIBILITY_DISTANCE),
-        snapToGrid                 = config.get("SNAP_TO_GRID"                 ,constants.SNAP_TO_GRID),
-        renderDepthImage           = config.get("RENDER_DEPTH"                 ,constants.RENDER_DEPTH),
-        renderInstanceSegmentation = config.get("RENDER_INSTANCE_SEGMENTATION" ,constants.RENDER_INSTANCE_SEGMENTATION),
-        width                      = config.get("IMAGE_WIDTH"                  ,constants.IMAGE_WIDTH),
-        height                     = config.get("IMAGE_HEIGHT"                 ,constants.IMAGE_HEIGHT),
-        fieldOfView                = config.get("FOV"                          ,constants.FOV),
-        rotateStepDegrees          = config.get("H_ROTATION"                   ,constants.H_ROTATION),
-        x_display                  = config.get("x_display"                    , None),
-        host                       = config.get("host"                         , "127.0.0.1"),
-        port                       = config.get("port"                         , 0),
-        headless                   = config.get("headless"                     , False))
+    # If we want to run headless, then we need to add platform=CloudRendering to the parameters
+    if config.get("headless"                     , False):
+        controller = Controller(
+            scene                      = config["scene"],
+            agentMode                  = config.get("AGENT_MODE"                   ,constants.AGENT_MODE),
+            gridSize                   = config.get("GRID_SIZE"                    ,constants.GRID_SIZE),
+            visibilityDistance         = config.get("VISIBILITY_DISTANCE"          ,constants.VISIBILITY_DISTANCE),
+            snapToGrid                 = config.get("SNAP_TO_GRID"                 ,constants.SNAP_TO_GRID),
+            renderDepthImage           = config.get("RENDER_DEPTH"                 ,constants.RENDER_DEPTH),
+            renderInstanceSegmentation = config.get("RENDER_INSTANCE_SEGMENTATION" ,constants.RENDER_INSTANCE_SEGMENTATION),
+            width                      = config.get("IMAGE_WIDTH"                  ,constants.IMAGE_WIDTH),
+            height                     = config.get("IMAGE_HEIGHT"                 ,constants.IMAGE_HEIGHT),
+            fieldOfView                = config.get("FOV"                          ,constants.FOV),
+            rotateStepDegrees          = config.get("H_ROTATION"                   ,constants.H_ROTATION),
+            x_display                  = config.get("x_display"                    , None),
+            host                       = config.get("host"                         , "127.0.0.1"),
+            port                       = config.get("port"                         , 0),
+            headless                   = config.get("headless"                     , False),
+            platform                   = CloudRendering)
+    else:
+        controller = Controller(
+            scene                      = config["scene"],
+            agentMode                  = config.get("AGENT_MODE"                   ,constants.AGENT_MODE),
+            gridSize                   = config.get("GRID_SIZE"                    ,constants.GRID_SIZE),
+            visibilityDistance         = config.get("VISIBILITY_DISTANCE"          ,constants.VISIBILITY_DISTANCE),
+            snapToGrid                 = config.get("SNAP_TO_GRID"                 ,constants.SNAP_TO_GRID),
+            renderDepthImage           = config.get("RENDER_DEPTH"                 ,constants.RENDER_DEPTH),
+            renderInstanceSegmentation = config.get("RENDER_INSTANCE_SEGMENTATION" ,constants.RENDER_INSTANCE_SEGMENTATION),
+            width                      = config.get("IMAGE_WIDTH"                  ,constants.IMAGE_WIDTH),
+            height                     = config.get("IMAGE_HEIGHT"                 ,constants.IMAGE_HEIGHT),
+            fieldOfView                = config.get("FOV"                          ,constants.FOV),
+            rotateStepDegrees          = config.get("H_ROTATION"                   ,constants.H_ROTATION),
+            x_display                  = config.get("x_display"                    , None),
+            host                       = config.get("host"                         , "127.0.0.1"),
+            port                       = config.get("port"                         , 0),
+            headless                   = config.get("headless"                     , False))
     return controller
-
 
 if __name__ == "__main__":
     # python -m thortils.controller

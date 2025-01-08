@@ -264,9 +264,8 @@ class Mapper3D:
         self.visible_objs_by_random_pose = dict()
         self.front_view_at_random_pose = dict()
 
-        # Counter and front view picture storage site for exploration pictures
-        self.cnt = 0
-        self.target_dir = "scene_pics/" + scene_id
+        # Set target dir and scene_id
+        self.set_scene_id(scene_id)
 
         # Adding 3rd party camera to the controller so that we can capture front view
         event = self.controller.step(
@@ -275,6 +274,13 @@ class Mapper3D:
             rotation=dict(x=90, y=0, z=0),
             fieldOfView=120
         )
+
+    # A way to set scene_id so that we can store images in a different place after resetting scene
+    def set_scene_id(self, scene_id):
+        # Counter and front view picture storage site for exploration pictures
+        self.cnt = 0
+        self.target_dir = "scene_pics/" + scene_id
+        self.scene_id = scene_id
 
     @property
     def map(self):

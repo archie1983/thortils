@@ -126,7 +126,10 @@ def thor_place_agent_randomly(controller,
        v_angles (list): List of valid pitch (tilt) angles
        h_angles (list): List of valid yaw (rotation) angles
        pos (x,z): If provided, will place the agent there, but
-            randomize the angles.
+            randomize the angles. If not provided, it will be selected at random
+            from AI2-THOR event = controller.step(action="GetReachablePositions").
+            That however does not enforce separation distance or anything else-
+            it's just a random position. 
     """
     reachable_positions = thor_reachable_positions(controller)
     agent_pose = thor_agent_pose(controller.last_event, as_tuple=False)

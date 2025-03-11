@@ -295,6 +295,7 @@ def find_navigation_plan(start, goal, navigation_actions,
     worklist.push(start, _nav_heuristic(start, goal))
 
     # cost[n] is the cost of the cheapest path from start to n currently known
+    #print("H1: ", start)
     cost = {}
     cost[start] = 0
 

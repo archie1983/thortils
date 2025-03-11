@@ -257,7 +257,7 @@ class Mapper3D:
     """This is intended to be a convenience object for building
     a 3D map with one set of camera intrinsic parameters, and
     interfacing directly with ai2thor events."""
-    def __init__(self, controller, scene_id = "no_scene_id"):
+    def __init__(self, controller, scene_id = "no_scene_id", storage_dir = "scene_pics"):
         self.controller = controller
         self.intrinsic = pj.thor_camera_intrinsic(controller)
         self._map = Map3D()
@@ -265,7 +265,7 @@ class Mapper3D:
         self.front_view_at_random_pose = dict()
 
         # Set target dir and scene_id
-        self.set_scene_id(scene_id)
+        self.set_scene_id(scene_id, storage_dir)
 
         # Adding 3rd party camera to the controller so that we can capture front view
         event = self.controller.step(
@@ -276,10 +276,10 @@ class Mapper3D:
         )
 
     # A way to set scene_id so that we can store images in a different place after resetting scene
-    def set_scene_id(self, scene_id):
+    def set_scene_id(self, scene_id, storage_dir):
         # Counter and front view picture storage site for exploration pictures
         self.cnt = 0
-        self.target_dir = "scene_pics/" + scene_id
+        self.target_dir = storage_dir + "/" + scene_id
         self.scene_id = scene_id
 
     @property
@@ -346,6 +346,18 @@ class Mapper3D:
             print(img_url)
 
         return img_url
+
+    ##
+    # Returns the currently used target directory
+    ##
+    def get_target_dir(self):
+        return self.target_dir
+
+    ##
+    # Returns the current image counter - useful if we want to store side pictures with the same index as the FPV picture.
+    ##
+    def get_current_img_counter(self):
+        return self.cnt
 
     def automate(self, num_stops=20, num_rotates=4,
                  v_angles=constants.V_ANGLES,

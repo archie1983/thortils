@@ -443,8 +443,8 @@ def get_shortest_path_to_object(controller, object_id,
     # plt.show()
 
     if tentative_plan is None:
-        raise ValueError("Plan not found from {} to {}"\
-                         .format((start_position, start_rotation), object_id))
+        raise ValueError("Plan not found from {} to {}, {}"\
+                         .format((start_position, start_rotation, target_position), object_id))
     if len(tentative_plan) == 0:
         final_plan = []   # it appears that the robot is at where it should be
 

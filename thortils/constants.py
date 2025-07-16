@@ -28,6 +28,7 @@ IMAGE_HEIGHT = 600
 
 RENDER_DEPTH = True
 RENDER_INSTANCE_SEGMENTATION = True
+RENDER_IMAGE = True
 
 # Need in order to not stuck the agent for sub-90 degree rotation.
 # BUT, it actually DOES NOT WORK

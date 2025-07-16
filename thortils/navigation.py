@@ -308,6 +308,7 @@ def find_navigation_plan(start, goal, navigation_actions,
     if debug:
         _expanded_poses = []
 
+    # AE: Start the A* exploration
     while not worklist.isEmpty():
         current_pose = worklist.pop()
         #print("AE: current_pose: ", current_pose)
@@ -315,6 +316,7 @@ def find_navigation_plan(start, goal, navigation_actions,
             _expanded_poses.append(current_pose)
         if _round_pose(current_pose) in visited:
             continue
+        # AE: If we're close enough to the end, then stop exploration
         if _same_pose(current_pose, goal,
                       tolerance=goal_distance,
                       angle_tolerance=angle_tolerance):
@@ -327,7 +329,9 @@ def find_navigation_plan(start, goal, navigation_actions,
                 return _reconstruct_plan(comefrom, current_pose,
                                          return_pose=return_pose)
 
+        # AE: Look at all defined actions and try each of them from the current pose and see what happens
         for action in navigation_actions:
+            #AE: See where we get if we try one of these actions
             next_pose = transform_pose(current_pose, action,
                                        grid_size=grid_size,
                                        diagonal_ok=diagonal_ok)
@@ -339,13 +343,27 @@ def find_navigation_plan(start, goal, navigation_actions,
             # AE: diagonal_ok = True. Since we set diagonal_ok to True earlier, we don't need to
             # AE: worry about these extra checks for now, but I will leave this comment here for
             # AE: future.
+            #
+            # AE: Now that we see where we got with this action, check if that's a valid place to be. If not, then
+            # try the next action.
             if not _valid_pose(_round_pose(next_pose), reachable_positions):
                 continue
 
+            # AE: Estimate the total cost to get to this new pose after making the action from the previous pose.
+            # we already know cost[current_pose], we can estimate cost of last action by how much we had to move and
+            # add that on top.
             new_cost = cost[current_pose] + _cost(action)
+            # AE: Now we check if this pose, that we get with the chosen action, already exists in the cost set.
+            # If it does, then we'll get some number from cost.get(next_pose, float("inf"), otherwise we'll get
+            # infinity. If we got some number, but our new calculation is better than the old one, then we update
+            # the cost set with the new cost for the given pose.
             if new_cost < cost.get(next_pose, float("inf")):
+                # AE: update the cost for this pose that we achieve from old pose with the selected action
                 cost[next_pose] = new_cost
+                #AE: push the newly discovered pose to our priority queue, giving the priority of its cost + euclidean
+                # distance from it to the goal (underestimate of the cost of the rest of the path).
                 worklist.push(next_pose, cost[next_pose] + _nav_heuristic(next_pose, goal))
+                # AE: Keep track of where we came from so that we can reconstruct plan
                 comefrom[next_pose] = (current_pose, action)
 
         visited.add(current_pose)
@@ -451,6 +469,7 @@ def get_shortest_path_to_object(controller, object_id,
     else:
         # Get the last position
         last_pose = tentative_plan[-1]["next_pose"]
+        # AE: We don't care about Y coord here, because we move in 2D. Just take X and Z from last_pose.
         last_position = (last_pose[0], start_position[1], last_pose[1])  # x,y,z
 
         # Get the true goal pose, with correct pitch and yaw
@@ -462,7 +481,10 @@ def get_shortest_path_to_object(controller, object_id,
         goal_yaw = _yaw_facing(last_position,
                                target_position, h_angles)
         #print("AE goal_yaw: " + str(goal_yaw))
+        # AE: We don't care about roll, so that is taken from start_rotation[2]
         goal_pose = (target_position, (goal_pitch, goal_yaw, start_rotation[2])) # roll is 0.0
+        # AE: Do we really need to run A* the 2nd time? Can't we just calculate yaws and pitches for all positions just
+        # like above few lines?
         final_plan = find_navigation_plan(start_pose, goal_pose,
                                           navigation_actions,
                                           reachable_positions,

@@ -57,7 +57,7 @@ from .scene import (robothor_scene_names,
                     proper_convert_scene_to_grid_map,
                     proper_convert_scene_to_grid_map_and_poses)
 
-from .navigation import compute_spl, spl_ratio
+from .navigation import compute_spl, spl_ratio, get_navigation_actions, _round_pose, _same_pose, transform_pose, _valid_pose, _cost
 
 from .grid_map import GridMap
 

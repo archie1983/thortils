@@ -58,6 +58,7 @@ def launch_controller(config):
             snapToGrid                 = config.get("SNAP_TO_GRID"                 ,constants.SNAP_TO_GRID),
             renderDepthImage           = config.get("RENDER_DEPTH"                 ,constants.RENDER_DEPTH),
             renderInstanceSegmentation = config.get("RENDER_INSTANCE_SEGMENTATION" ,constants.RENDER_INSTANCE_SEGMENTATION),
+            renderImage                = config.get("RENDER_IMAGE"                 ,constants.RENDER_IMAGE),
             width                      = config.get("IMAGE_WIDTH"                  ,constants.IMAGE_WIDTH),
             height                     = config.get("IMAGE_HEIGHT"                 ,constants.IMAGE_HEIGHT),
             fieldOfView                = config.get("FOV"                          ,constants.FOV),

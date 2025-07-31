@@ -11,6 +11,14 @@ import prior
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
+from ai2_thor_model_training.ae_utils import (NavigationUtils, action_mapping,
+                                                              action_to_index, index_to_action, inverted_action_mapping,
+                                                              AI2THORUtils, get_path_length, get_centre_of_the_room,
+                                                              room_this_point_belongs_to, get_rooms_ground_truth)
+
+from thortils.agent import thor_reachable_positions, thor_agent_position, thor_agent_pose
+from thortils.utils import roundany, PriorityQueue, normalize_angles, euclidean_dist
+
 #point = Point(0.5, 0.5)
 #polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 #print(polygon.contains(point))
@@ -116,6 +124,15 @@ def main(init_func=None, step_func=None):
     #controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
     controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0})
 
+    # AE: Required infrastructure for calculating path lengths
+    nu = NavigationUtils()
+    grid_size = controller.initialization_parameters["gridSize"]
+    reachable_positions = [
+        tuple(map(lambda x: roundany(x, grid_size), pos))
+        for pos in thor_reachable_positions(controller)]
+    rooms_in_habitat = get_rooms_ground_truth(house)
+    # AE: Path length infra set up
+
     event = controller.step(
         action="AddThirdPartyCamera",
         position=dict(x=-4.25, y=2, z=-2.5),
@@ -141,6 +158,7 @@ def main(init_func=None, step_func=None):
                 step_func(event, config)
 
             pose = thortils.thor_agent_pose(controller, as_tuple=True)
+
             #print(pose)
             (p, r) = pose
             objs = get_visible_object_names(event)
@@ -148,6 +166,17 @@ def main(init_func=None, step_func=None):
             store_frame(event)
 
             print("{} | Agent pose: {}".format(k, pose) + " Room: " + what_room_is_point_in(rooms, p) + " ## " + str(objs))
+
+            # AE: Now that we have a pose, let's calculate how far is it to the centre of the room
+            point_for_room_search = (p[0], "", p[2])
+            #print("AE: ", rooms_in_habitat, " :: ", point_for_room_search)
+            room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
+            room_centre = room_of_placement[2]
+            path_length = nu.get_path_cost_to_target_point(pose,
+                                                           room_centre,
+                                                           reachable_positions)
+            print("AE: Path Length: ", path_length)
+            print("AE: Path: ", nu.get_last_path_gen())
 
 if __name__ == "__main__":
     main()

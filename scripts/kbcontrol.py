@@ -117,6 +117,7 @@ def main(init_func=None, step_func=None):
 
     dataset = prior.load_dataset("procthor-10k")
     house = dataset["train"][43]
+    #house = dataset["train"][88]
     args.scene = house
 
     rooms = get_rooms(house)
@@ -126,6 +127,8 @@ def main(init_func=None, step_func=None):
 
     # AE: Required infrastructure for calculating path lengths
     nu = NavigationUtils()
+    atu = AI2THORUtils()
+    atu.set_controller(controller)
     grid_size = controller.initialization_parameters["gridSize"]
     reachable_positions = [
         tuple(map(lambda x: roundany(x, grid_size), pos))
@@ -165,18 +168,28 @@ def main(init_func=None, step_func=None):
 
             store_frame(event)
 
-            print("{} | Agent pose: {}".format(k, pose) + " Room: " + what_room_is_point_in(rooms, p) + " ## " + str(objs))
+            #print("{} | Agent pose: {}".format(k, pose) + " Room: " + what_room_is_point_in(rooms, p) + " ## " + str(objs))
+            print("{} | Agent pose: {}".format(k, pose))
 
             # AE: Now that we have a pose, let's calculate how far is it to the centre of the room
             point_for_room_search = (p[0], "", p[2])
             #print("AE: ", rooms_in_habitat, " :: ", point_for_room_search)
             room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
+            #print("AE: room_of_placement: ", room_of_placement)
+            print("AE: rooms_in_habitat: ", rooms_in_habitat)
             room_centre = room_of_placement[2]
-            path_length = nu.get_path_cost_to_target_point(pose,
-                                                           room_centre,
-                                                           reachable_positions)
+            try:
+                path_length = nu.get_path_cost_to_target_point(pose,
+                                                               room_centre,
+                                                               reachable_positions)
+            except ValueError:
+                path_length = 0
+                print("AE: No Path Found")
+
             print("AE: Path Length: ", path_length)
-            print("AE: Path: ", nu.get_last_path_gen())
+            (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
+            print("AE: Path: ", cur_path)
+            atu.visualise_path2(cur_path, reachable_positions, rooms_in_habitat, start, dest)
 
 if __name__ == "__main__":
     main()

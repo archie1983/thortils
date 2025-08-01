@@ -176,8 +176,9 @@ def main(init_func=None, step_func=None):
             #print("AE: ", rooms_in_habitat, " :: ", point_for_room_search)
             room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
             #print("AE: room_of_placement: ", room_of_placement)
-            print("AE: rooms_in_habitat: ", rooms_in_habitat)
+            #print("AE: rooms_in_habitat: ", rooms_in_habitat)
             room_centre = room_of_placement[2]
+            #print("AE: room_centre: ", room_centre)
             try:
                 path_length = nu.get_path_cost_to_target_point(pose,
                                                                room_centre,

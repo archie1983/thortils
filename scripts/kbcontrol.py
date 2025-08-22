@@ -98,6 +98,11 @@ def store_frame(event):
     os.makedirs(target_dir, exist_ok=True)
     cv2.imwrite(os.path.join(target_dir, str(cnt) + ".png"), img)
 
+def get_agent_pos_and_rotation(controller):
+    pos = (controller.last_event.metadata["agent"]["position"]["x"], controller.last_event.metadata["agent"]["position"]["y"], controller.last_event.metadata["agent"]["position"]["z"])
+    rtn = (controller.last_event.metadata["agent"]["rotation"]["x"], controller.last_event.metadata["agent"]["rotation"]["y"], controller.last_event.metadata["agent"]["rotation"]["z"])
+    return (pos, rtn)
+
 def main(init_func=None, step_func=None):
     parser = argparse.ArgumentParser(
         description="Keyboard control of agent in ai2thor")
@@ -116,8 +121,9 @@ def main(init_func=None, step_func=None):
     print_controls(controls)
 
     dataset = prior.load_dataset("procthor-10k")
-    house = dataset["train"][43]
+    house = dataset["train"][43] # 10
     #house = dataset["train"][88]
+    print(house)
     args.scene = house
 
     rooms = get_rooms(house)
@@ -175,12 +181,28 @@ def main(init_func=None, step_func=None):
             point_for_room_search = (p[0], "", p[2])
             #print("AE: ", rooms_in_habitat, " :: ", point_for_room_search)
             room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
-            #print("AE: room_of_placement: ", room_of_placement)
-            print("AE: rooms_in_habitat: ", rooms_in_habitat)
-            room_centre = room_of_placement[2]
+            # #print("AE: room_of_placement: ", room_of_placement)
+            # print("AE: rooms_in_habitat: ", rooms_in_habitat)
+            # room_centre = room_of_placement[2]
+            # try:
+            #     path_length = nu.get_path_cost_to_target_point(pose,
+            #                                                    room_centre,
+            #                                                    reachable_positions)
+            # except ValueError:
+            #     path_length = 0
+            #     print("AE: No Path Found")
+
+            cur_pos = get_agent_pos_and_rotation(controller)
+            place_with_rtn = (cur_pos[0][0], cur_pos[0][2], cur_pos[1][1])
+
             try:
+                current_target_point = nu.find_door_target(place_with_rtn,
+                                                                     rooms_in_habitat,
+                                                                     reachable_positions,
+                                                                     controller)
+
                 path_length = nu.get_path_cost_to_target_point(pose,
-                                                               room_centre,
+                                                               current_target_point,
                                                                reachable_positions)
             except ValueError:
                 path_length = 0

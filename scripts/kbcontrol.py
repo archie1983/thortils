@@ -161,6 +161,16 @@ def main(init_func=None, step_func=None):
         if k in controls:
             action = controls[k]
             params = constants.MOVEMENT_PARAMS[action]
+
+            (p, r) = thortils.thor_agent_pose(controller, as_tuple=True)
+            c_yaw = int(r[1])
+            if action == "MoveAhead":
+                if c_yaw in [45, 135, 225, 315]:
+                    params["moveMagnitude"] = 0.353553391
+                else:
+                    params["moveMagnitude"] = 0.25
+
+            print("MOVE PARAMS: ", params)
             event = controller.step(action=action, **params)
             event = controller.step(action="Pass")
             if step_func is not None:
@@ -203,7 +213,7 @@ def main(init_func=None, step_func=None):
 
                 path_length = nu.get_path_cost_to_target_point(pose,
                                                                current_target_point,
-                                                               reachable_positions)
+                                                               reachable_positions, close_enough=0.25)
             except ValueError:
                 path_length = 0
                 print("AE: No Path Found")

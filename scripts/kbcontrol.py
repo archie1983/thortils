@@ -19,6 +19,8 @@ from ai2_thor_model_training.ae_utils import (NavigationUtils, action_mapping,
 from thortils.agent import thor_reachable_positions, thor_agent_position, thor_agent_pose
 from thortils.utils import roundany, PriorityQueue, normalize_angles, euclidean_dist
 
+import numpy as np
+
 #point = Point(0.5, 0.5)
 #polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 #print(polygon.contains(point))
@@ -45,8 +47,8 @@ def get_rooms(house):
 
     #print(rooms)
 
-    for room in rooms:
-        print(room[0])
+    #for room in rooms:
+    #    print(room[0])
     return rooms
 
 def get_visible_object_names(event):
@@ -103,6 +105,70 @@ def get_agent_pos_and_rotation(controller):
     rtn = (controller.last_event.metadata["agent"]["rotation"]["x"], controller.last_event.metadata["agent"]["rotation"]["y"], controller.last_event.metadata["agent"]["rotation"]["z"])
     return (pos, rtn)
 
+##
+# From the max and min of the habitat coordinates we can generate full grid of the habitat.
+# Later we can infer unreachable positions from this and reachable positions.
+##
+def create_full_grid_from_room_layout(rooms_in_habitat, step = 0.25):
+    #print("AE, rooms_in_habitat: ", rooms_in_habitat)
+    room_coords = [] # here we will store coordinates of every corner of each room
+    [room_coords.extend(r[1]) for r in rooms_in_habitat]
+    zf = lambda x: zip(*x) # this will allow to turn the tuples of coordinates into two lists - X and Y coordinates lists.
+    [x_coords, y_coords] = zf(room_coords) # get the two lists
+    # get the max and min coordinates from each list
+    min_x = min(x_coords)
+    min_y = min(y_coords)
+    max_x = max(x_coords)
+    max_y = max(y_coords)
+
+    # Create the grid coordinates
+    x_coords = np.arange(min_x, max_x + step, step)
+    y_coords = np.arange(min_y, max_y + step, step)
+
+    # Create meshgrid
+    X, Y = np.meshgrid(x_coords, y_coords)
+
+    # Create list of (x, y) tuples
+    all_positions = list(zip(X.flatten(), Y.flatten()))
+    return all_positions
+
+def add_buffer_to_unreachable(reachable_points, all_grid_points, step=0.25, buffer_size=1):
+    """
+    Add buffer around unreachable positions using grid-based approach.
+
+    Parameters:
+    reachable_positions: list of (x, y) tuples from AI2-THOR
+    all_grid_points: full list of all (x, y) tuples including both reachable and unreachable
+    step: grid step size
+    buffer_size: number of grid cells to buffer (default: 1 cell = 0.25m)
+    """
+
+    # Find unreachable positions
+    unreachable = all_grid_points - reachable_points
+
+    # Add buffer around unreachable positions
+    buffered_unreachable = set(unreachable)  # Start with original unreachable
+
+    # Define neighbor directions (4-connected or 8-connected)
+    directions_4 = [(0, step), (0, -step), (step, 0), (-step, 0)]
+    directions_8 = directions_4 + [(step, step), (step, -step), (-step, step), (-step, -step)]
+
+    # Add buffer layers
+    for _ in range(buffer_size):
+        new_buffer = set()
+        for point in buffered_unreachable:
+            x, z = point
+            for dx, dz in directions_8:  # Use 8-connected for better coverage
+                neighbor = (round(x + dx, 2), round(z + dz, 2))
+                if neighbor in all_grid_points:
+                    new_buffer.add(neighbor)
+        buffered_unreachable.update(new_buffer)
+
+    # Final safe positions are all grid points minus buffered unreachable
+    safe_positions = all_grid_points - buffered_unreachable
+
+    return safe_positions, buffered_unreachable
+
 def main(init_func=None, step_func=None):
     parser = argparse.ArgumentParser(
         description="Keyboard control of agent in ai2thor")
@@ -123,24 +189,34 @@ def main(init_func=None, step_func=None):
     dataset = prior.load_dataset("procthor-10k")
     house = dataset["train"][43] # 10
     #house = dataset["train"][88]
-    print(house)
+    #print(house)
     args.scene = house
 
     rooms = get_rooms(house)
 
     #controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
-    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0})
+    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.1})
+    grid_size = controller.initialization_parameters["gridSize"]
 
     # AE: Required infrastructure for calculating path lengths
-    nu = NavigationUtils()
+    nu = NavigationUtils(step = grid_size)
     atu = AI2THORUtils()
     atu.set_controller(controller)
-    grid_size = controller.initialization_parameters["gridSize"]
+
     reachable_positions = [
-        tuple(map(lambda x: roundany(x, grid_size), pos))
+        tuple(map(lambda x: round(roundany(x, grid_size), 2), pos))
         for pos in thor_reachable_positions(controller)]
     rooms_in_habitat = get_rooms_ground_truth(house)
+    #print("reachable_positions: ", reachable_positions)
     # AE: Path length infra set up
+    #pos_ba = thor_reachable_positions(controller, by_axes = True)
+    #print("AE, by axes: ", pos_ba)
+    full_grid = create_full_grid_from_room_layout(rooms_in_habitat, step=grid_size)
+    full_grid = [tuple(map(lambda x: round(x, 2), pos)) for pos in full_grid]
+    unreachable_postions = set(full_grid) - set(reachable_positions)
+    (safe_pos, buf_unreachable_pos) = add_buffer_to_unreachable(set(reachable_positions), set(full_grid), step=grid_size)
+    print("unreachable_postions: ", unreachable_postions)
+    #print("reachable_positions: ", reachable_positions)
 
     event = controller.step(
         action="AddThirdPartyCamera",
@@ -166,9 +242,9 @@ def main(init_func=None, step_func=None):
             c_yaw = int(r[1])
             if action == "MoveAhead":
                 if c_yaw in [45, 135, 225, 315]:
-                    params["moveMagnitude"] = 0.353553391
+                    params["moveMagnitude"] = (grid_size**2*2)**0.5 # Pythagorean theorem c = sqrt(a^2 + a^2) #0.353553391
                 else:
-                    params["moveMagnitude"] = 0.25
+                    params["moveMagnitude"] = grid_size #0.25
 
             print("MOVE PARAMS: ", params)
             event = controller.step(action=action, **params)
@@ -209,19 +285,20 @@ def main(init_func=None, step_func=None):
                 current_target_point = nu.find_door_target(place_with_rtn,
                                                                      rooms_in_habitat,
                                                                      reachable_positions,
-                                                                     controller)
+                                                                     controller, close_enough=0.25, step=grid_size)
 
                 path_length = nu.get_path_cost_to_target_point(pose,
                                                                current_target_point,
-                                                               reachable_positions, close_enough=0.25)
-            except ValueError:
-                path_length = 0
-                print("AE: No Path Found")
+                                                               reachable_positions, close_enough=0.25, step=grid_size)
 
-            print("AE: Path Length: ", path_length)
-            (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
-            print("AE: Path: ", cur_path)
-            atu.visualise_path2(cur_path, reachable_positions, rooms_in_habitat, start, dest)
+                print("AE: Path Length: ", path_length)
+                (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
+                print("AE: Path: ", cur_path)
+                atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest, show_unreachable_pos = True)
+                #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
+            except ValueError as e:
+                path_length = 0
+                print("AE: No Path Found", e)
 
 if __name__ == "__main__":
     main()

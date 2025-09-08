@@ -195,7 +195,10 @@ def main(init_func=None, step_func=None):
     rooms = get_rooms(house)
 
     #controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
-    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.1})
+    # GRID_SIZE can be e.g. 0.25, 0.125, 0.1, 0.3. But if we have 0.2 or 0.15, then AI2-Thor returns
+    # insane grid locations (e.g. with 0.15 we get (0.39999961853027344, 5.75), which shouldn't be possible).
+    # I'm not sure why this happens.
+    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.125})
     grid_size = controller.initialization_parameters["gridSize"]
 
     # AE: Required infrastructure for calculating path lengths
@@ -206,6 +209,15 @@ def main(init_func=None, step_func=None):
     reachable_positions = [
         tuple(map(lambda x: round(roundany(x, grid_size), 2), pos))
         for pos in thor_reachable_positions(controller)]
+
+    #reachable_positions = [
+    #    tuple(map(lambda x: round(x, 2), pos))
+    #    for pos in thor_reachable_positions(controller)]
+
+    #event = controller.step(action="GetReachablePositions")
+    #r_positions = event.metadata["actionReturn"]
+    #r_positions = [(pos['x'], pos['z']) for pos in r_positions]
+
     rooms_in_habitat = get_rooms_ground_truth(house)
     #print("reachable_positions: ", reachable_positions)
     # AE: Path length infra set up
@@ -215,8 +227,8 @@ def main(init_func=None, step_func=None):
     full_grid = [tuple(map(lambda x: round(x, 2), pos)) for pos in full_grid]
     unreachable_postions = set(full_grid) - set(reachable_positions)
     (safe_pos, buf_unreachable_pos) = add_buffer_to_unreachable(set(reachable_positions), set(full_grid), step=grid_size)
-    print("unreachable_postions: ", unreachable_postions)
-    #print("reachable_positions: ", reachable_positions)
+    #print("unreachable_postions: ", unreachable_postions)
+    #print("reachable_positions: ", r_positions) #reachable_positions
 
     event = controller.step(
         action="AddThirdPartyCamera",
@@ -282,23 +294,28 @@ def main(init_func=None, step_func=None):
             place_with_rtn = (cur_pos[0][0], cur_pos[0][2], cur_pos[1][1])
 
             try:
+                # TODO: Ignore doors that are very close by (e.g. right behind us)
                 current_target_point = nu.find_door_target(place_with_rtn,
                                                                      rooms_in_habitat,
                                                                      reachable_positions,
                                                                      controller, close_enough=0.25, step=grid_size)
 
+                t1 = time.time()
                 path_length = nu.get_path_cost_to_target_point(pose,
                                                                current_target_point,
                                                                reachable_positions, close_enough=0.25, step=grid_size)
-
-                print("AE: Path Length: ", path_length)
-                (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
-                print("AE: Path: ", cur_path)
-                atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest, show_unreachable_pos = True)
-                #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
+                print("AE: path plan time: ", (time.time() - t1))
             except ValueError as e:
                 path_length = 0
                 print("AE: No Path Found", e)
+
+            print("AE: Path Length: ", path_length)
+            (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
+            print("AE: Path: ", cur_path)
+            atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
+                                show_unreachable_pos = True,
+                                show_reachable_pos = False)
+            #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 
 if __name__ == "__main__":
     main()

@@ -198,7 +198,7 @@ def main(init_func=None, step_func=None):
     # GRID_SIZE can be e.g. 0.25, 0.125, 0.1, 0.3. But if we have 0.2 or 0.15, then AI2-Thor returns
     # insane grid locations (e.g. with 0.15 we get (0.39999961853027344, 5.75), which shouldn't be possible).
     # I'm not sure why this happens.
-    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.125})
+    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.25})
     grid_size = controller.initialization_parameters["gridSize"]
 
     # AE: Required infrastructure for calculating path lengths
@@ -219,6 +219,7 @@ def main(init_func=None, step_func=None):
     #r_positions = [(pos['x'], pos['z']) for pos in r_positions]
 
     rooms_in_habitat = get_rooms_ground_truth(house)
+    #print(house["rooms"])
     #print("reachable_positions: ", reachable_positions)
     # AE: Path length infra set up
     #pos_ba = thor_reachable_positions(controller, by_axes = True)
@@ -294,11 +295,11 @@ def main(init_func=None, step_func=None):
             place_with_rtn = (cur_pos[0][0], cur_pos[0][2], cur_pos[1][1])
 
             try:
-                # TODO: Ignore doors that are very close by (e.g. right behind us)
                 current_target_point = nu.find_door_target(place_with_rtn,
                                                                      rooms_in_habitat,
                                                                      reachable_positions,
-                                                                     controller, close_enough=0.25, step=grid_size)
+                                                                     house,
+                                                                     controller, close_enough=0.25, step=grid_size, extend_path=True)
 
                 t1 = time.time()
                 path_length = nu.get_path_cost_to_target_point(pose,
@@ -313,7 +314,7 @@ def main(init_func=None, step_func=None):
             (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
             print("AE: Path: ", cur_path)
             atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
-                                show_unreachable_pos = True,
+                                show_unreachable_pos = False,
                                 show_reachable_pos = False)
             #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 

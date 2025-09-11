@@ -127,7 +127,8 @@ def get_movement_params(step_size, v_rot, h_rot):
             "RotateRight":  {"degrees": h_rot},
             "MoveAhead"  :  {"moveMagnitude": step_size},
             "LookUp"     :  {"degrees": v_rot},
-            "LookDown"   :  {"degrees": v_rot}}
+            "LookDown"   :  {"degrees": v_rot},
+            "Teleport"   :  {"position": (5, 0, 5), "rotation": (0, 270, 0)}}
 MOVEMENT_PARAMS = get_movement_params(MOVE_STEP_SIZE,
                                       V_ROTATION,
                                       H_ROTATION)

@@ -14,10 +14,13 @@ from shapely.geometry.polygon import Polygon
 from ai2_thor_model_training.ae_utils import (NavigationUtils, action_mapping,
                                                               action_to_index, index_to_action, inverted_action_mapping,
                                                               AI2THORUtils, get_path_length, get_centre_of_the_room,
-                                                              room_this_point_belongs_to, get_rooms_ground_truth)
+                                                              room_this_point_belongs_to, get_rooms_ground_truth,
+                                                              create_full_grid_from_room_layout, add_buffer_to_unreachable)
 
 from thortils.agent import thor_reachable_positions, thor_agent_position, thor_agent_pose
 from thortils.utils import roundany, PriorityQueue, normalize_angles, euclidean_dist
+
+import numpy as np
 
 #point = Point(0.5, 0.5)
 #polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
@@ -45,8 +48,8 @@ def get_rooms(house):
 
     #print(rooms)
 
-    for room in rooms:
-        print(room[0])
+    #for room in rooms:
+    #    print(room[0])
     return rooms
 
 def get_visible_object_names(event):
@@ -73,6 +76,9 @@ def print_controls(controls):
     {reverse['LookDown']}
 (LookDown)
 
+    {reverse['Teleport']}
+(Teleport to defined place)
+
     q
 (quit)
     """
@@ -98,6 +104,11 @@ def store_frame(event):
     os.makedirs(target_dir, exist_ok=True)
     cv2.imwrite(os.path.join(target_dir, str(cnt) + ".png"), img)
 
+def get_agent_pos_and_rotation(controller):
+    pos = (controller.last_event.metadata["agent"]["position"]["x"], controller.last_event.metadata["agent"]["position"]["y"], controller.last_event.metadata["agent"]["position"]["z"])
+    rtn = (controller.last_event.metadata["agent"]["rotation"]["x"], controller.last_event.metadata["agent"]["rotation"]["y"], controller.last_event.metadata["agent"]["rotation"]["z"])
+    return (pos, rtn)
+
 def main(init_func=None, step_func=None):
     parser = argparse.ArgumentParser(
         description="Keyboard control of agent in ai2thor")
@@ -111,30 +122,55 @@ def main(init_func=None, step_func=None):
         "a": "RotateLeft",
         "d": "RotateRight",
         "e": "LookUp",
-        "c": "LookDown"
+        "c": "LookDown",
+        "t": "Teleport"
     }
     print_controls(controls)
 
     dataset = prior.load_dataset("procthor-10k")
-    house = dataset["train"][43]
+    house = dataset["train"][43] # 10
     #house = dataset["train"][88]
+    #print(house)
     args.scene = house
 
     rooms = get_rooms(house)
 
     #controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
-    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0})
+    # GRID_SIZE can be e.g. 0.25, 0.125, 0.1, 0.3. But if we have 0.2 or 0.15, then AI2-Thor returns
+    # insane grid locations (e.g. with 0.15 we get (0.39999961853027344, 5.75), which shouldn't be possible).
+    # I'm not sure why this happens.
+    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.125})
+    grid_size = controller.initialization_parameters["gridSize"]
 
     # AE: Required infrastructure for calculating path lengths
-    nu = NavigationUtils()
+    nu = NavigationUtils(step = grid_size)
     atu = AI2THORUtils()
     atu.set_controller(controller)
-    grid_size = controller.initialization_parameters["gridSize"]
+
     reachable_positions = [
-        tuple(map(lambda x: roundany(x, grid_size), pos))
+        tuple(map(lambda x: round(roundany(x, grid_size), 2), pos))
         for pos in thor_reachable_positions(controller)]
+
+    #reachable_positions = [
+    #    tuple(map(lambda x: round(x, 2), pos))
+    #    for pos in thor_reachable_positions(controller)]
+
+    #event = controller.step(action="GetReachablePositions")
+    #r_positions = event.metadata["actionReturn"]
+    #r_positions = [(pos['x'], pos['z']) for pos in r_positions]
+
     rooms_in_habitat = get_rooms_ground_truth(house)
+    #print(house["rooms"])
+    #print("reachable_positions: ", reachable_positions)
     # AE: Path length infra set up
+    #pos_ba = thor_reachable_positions(controller, by_axes = True)
+    #print("AE, by axes: ", pos_ba)
+    full_grid = create_full_grid_from_room_layout(rooms_in_habitat, step=grid_size)
+    full_grid = [tuple(map(lambda x: round(x, 2), pos)) for pos in full_grid]
+    unreachable_postions = set(full_grid) - set(reachable_positions)
+    (safe_pos, buf_unreachable_pos) = add_buffer_to_unreachable(set(reachable_positions), set(full_grid), step=grid_size)
+    #print("unreachable_postions: ", unreachable_postions)
+    #print("reachable_positions: ", r_positions) #reachable_positions
 
     event = controller.step(
         action="AddThirdPartyCamera",
@@ -155,6 +191,22 @@ def main(init_func=None, step_func=None):
         if k in controls:
             action = controls[k]
             params = constants.MOVEMENT_PARAMS[action]
+
+            (p, r) = thortils.thor_agent_pose(controller, as_tuple=True)
+            c_yaw = int(r[1])
+            if action == "MoveAhead":
+                if c_yaw in [45, 135, 225, 315]:
+                    params["moveMagnitude"] = (grid_size**2*2)**0.5 # Pythagorean theorem c = sqrt(a^2 + a^2) #0.353553391
+                else:
+                    params["moveMagnitude"] = grid_size #0.25
+
+            if action == "Teleport":
+                params["position"] = dict(x=5.62, y=0.9009997844696045, z=3.5)
+                #params["position"] = dict(x=7.0, y=0.9009997844696045, z=5.625)
+                params["rotation"] = dict(x=0.0, y=270, z=0.0)
+                # self.controller.step(action="Teleport", **pos_navigate_to)
+
+            print("MOVE PARAMS: ", params)
             event = controller.step(action=action, **params)
             event = controller.step(action="Pass")
             if step_func is not None:
@@ -175,22 +227,43 @@ def main(init_func=None, step_func=None):
             point_for_room_search = (p[0], "", p[2])
             #print("AE: ", rooms_in_habitat, " :: ", point_for_room_search)
             room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
-            #print("AE: room_of_placement: ", room_of_placement)
-            #print("AE: rooms_in_habitat: ", rooms_in_habitat)
-            room_centre = room_of_placement[2]
-            #print("AE: room_centre: ", room_centre)
+            # #print("AE: room_of_placement: ", room_of_placement)
+            # print("AE: rooms_in_habitat: ", rooms_in_habitat)
+            # room_centre = room_of_placement[2]
+            # try:
+            #     path_length = nu.get_path_cost_to_target_point(pose,
+            #                                                    room_centre,
+            #                                                    reachable_positions)
+            # except ValueError:
+            #     path_length = 0
+            #     print("AE: No Path Found")
+
+            cur_pos = get_agent_pos_and_rotation(controller)
+            place_with_rtn = (cur_pos[0][0], cur_pos[0][2], cur_pos[1][1])
+
             try:
+                current_target_point = nu.find_door_target(place_with_rtn,
+                                                                     rooms_in_habitat,
+                                                                     reachable_positions,
+                                                                     house,
+                                                                     controller, close_enough=0.25, step=grid_size, extend_path=True)
+
+                t1 = time.time()
                 path_length = nu.get_path_cost_to_target_point(pose,
-                                                               room_centre,
-                                                               reachable_positions)
-            except ValueError:
+                                                               current_target_point,
+                                                               reachable_positions, close_enough=0.25, step=grid_size, debug=True)
+                print("AE: path plan time: ", (time.time() - t1))
+            except ValueError as e:
                 path_length = 0
-                print("AE: No Path Found")
+                print("AE: No Path Found", e)
 
             print("AE: Path Length: ", path_length)
             (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
             print("AE: Path: ", cur_path)
-            atu.visualise_path2(cur_path, reachable_positions, rooms_in_habitat, start, dest)
+            atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
+                                show_unreachable_pos = True,
+                                show_reachable_pos = False)
+            #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 
 if __name__ == "__main__":
     main()

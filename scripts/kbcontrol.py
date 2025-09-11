@@ -14,7 +14,8 @@ from shapely.geometry.polygon import Polygon
 from ai2_thor_model_training.ae_utils import (NavigationUtils, action_mapping,
                                                               action_to_index, index_to_action, inverted_action_mapping,
                                                               AI2THORUtils, get_path_length, get_centre_of_the_room,
-                                                              room_this_point_belongs_to, get_rooms_ground_truth)
+                                                              room_this_point_belongs_to, get_rooms_ground_truth,
+                                                              create_full_grid_from_room_layout, add_buffer_to_unreachable)
 
 from thortils.agent import thor_reachable_positions, thor_agent_position, thor_agent_pose
 from thortils.utils import roundany, PriorityQueue, normalize_angles, euclidean_dist
@@ -75,6 +76,9 @@ def print_controls(controls):
     {reverse['LookDown']}
 (LookDown)
 
+    {reverse['Teleport']}
+(Teleport to defined place)
+
     q
 (quit)
     """
@@ -105,70 +109,6 @@ def get_agent_pos_and_rotation(controller):
     rtn = (controller.last_event.metadata["agent"]["rotation"]["x"], controller.last_event.metadata["agent"]["rotation"]["y"], controller.last_event.metadata["agent"]["rotation"]["z"])
     return (pos, rtn)
 
-##
-# From the max and min of the habitat coordinates we can generate full grid of the habitat.
-# Later we can infer unreachable positions from this and reachable positions.
-##
-def create_full_grid_from_room_layout(rooms_in_habitat, step = 0.25):
-    #print("AE, rooms_in_habitat: ", rooms_in_habitat)
-    room_coords = [] # here we will store coordinates of every corner of each room
-    [room_coords.extend(r[1]) for r in rooms_in_habitat]
-    zf = lambda x: zip(*x) # this will allow to turn the tuples of coordinates into two lists - X and Y coordinates lists.
-    [x_coords, y_coords] = zf(room_coords) # get the two lists
-    # get the max and min coordinates from each list
-    min_x = min(x_coords)
-    min_y = min(y_coords)
-    max_x = max(x_coords)
-    max_y = max(y_coords)
-
-    # Create the grid coordinates
-    x_coords = np.arange(min_x, max_x + step, step)
-    y_coords = np.arange(min_y, max_y + step, step)
-
-    # Create meshgrid
-    X, Y = np.meshgrid(x_coords, y_coords)
-
-    # Create list of (x, y) tuples
-    all_positions = list(zip(X.flatten(), Y.flatten()))
-    return all_positions
-
-def add_buffer_to_unreachable(reachable_points, all_grid_points, step=0.25, buffer_size=1):
-    """
-    Add buffer around unreachable positions using grid-based approach.
-
-    Parameters:
-    reachable_positions: list of (x, y) tuples from AI2-THOR
-    all_grid_points: full list of all (x, y) tuples including both reachable and unreachable
-    step: grid step size
-    buffer_size: number of grid cells to buffer (default: 1 cell = 0.25m)
-    """
-
-    # Find unreachable positions
-    unreachable = all_grid_points - reachable_points
-
-    # Add buffer around unreachable positions
-    buffered_unreachable = set(unreachable)  # Start with original unreachable
-
-    # Define neighbor directions (4-connected or 8-connected)
-    directions_4 = [(0, step), (0, -step), (step, 0), (-step, 0)]
-    directions_8 = directions_4 + [(step, step), (step, -step), (-step, step), (-step, -step)]
-
-    # Add buffer layers
-    for _ in range(buffer_size):
-        new_buffer = set()
-        for point in buffered_unreachable:
-            x, z = point
-            for dx, dz in directions_8:  # Use 8-connected for better coverage
-                neighbor = (round(x + dx, 2), round(z + dz, 2))
-                if neighbor in all_grid_points:
-                    new_buffer.add(neighbor)
-        buffered_unreachable.update(new_buffer)
-
-    # Final safe positions are all grid points minus buffered unreachable
-    safe_positions = all_grid_points - buffered_unreachable
-
-    return safe_positions, buffered_unreachable
-
 def main(init_func=None, step_func=None):
     parser = argparse.ArgumentParser(
         description="Keyboard control of agent in ai2thor")
@@ -182,7 +122,8 @@ def main(init_func=None, step_func=None):
         "a": "RotateLeft",
         "d": "RotateRight",
         "e": "LookUp",
-        "c": "LookDown"
+        "c": "LookDown",
+        "t": "Teleport"
     }
     print_controls(controls)
 
@@ -198,7 +139,7 @@ def main(init_func=None, step_func=None):
     # GRID_SIZE can be e.g. 0.25, 0.125, 0.1, 0.3. But if we have 0.2 or 0.15, then AI2-Thor returns
     # insane grid locations (e.g. with 0.15 we get (0.39999961853027344, 5.75), which shouldn't be possible).
     # I'm not sure why this happens.
-    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.25})
+    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.125})
     grid_size = controller.initialization_parameters["gridSize"]
 
     # AE: Required infrastructure for calculating path lengths
@@ -259,6 +200,12 @@ def main(init_func=None, step_func=None):
                 else:
                     params["moveMagnitude"] = grid_size #0.25
 
+            if action == "Teleport":
+                params["position"] = dict(x=5.62, y=0.9009997844696045, z=3.5)
+                #params["position"] = dict(x=7.0, y=0.9009997844696045, z=5.625)
+                params["rotation"] = dict(x=0.0, y=270, z=0.0)
+                # self.controller.step(action="Teleport", **pos_navigate_to)
+
             print("MOVE PARAMS: ", params)
             event = controller.step(action=action, **params)
             event = controller.step(action="Pass")
@@ -304,7 +251,7 @@ def main(init_func=None, step_func=None):
                 t1 = time.time()
                 path_length = nu.get_path_cost_to_target_point(pose,
                                                                current_target_point,
-                                                               reachable_positions, close_enough=0.25, step=grid_size)
+                                                               reachable_positions, close_enough=0.25, step=grid_size, debug=True)
                 print("AE: path plan time: ", (time.time() - t1))
             except ValueError as e:
                 path_length = 0
@@ -314,7 +261,7 @@ def main(init_func=None, step_func=None):
             (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
             print("AE: Path: ", cur_path)
             atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
-                                show_unreachable_pos = False,
+                                show_unreachable_pos = True,
                                 show_reachable_pos = False)
             #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 

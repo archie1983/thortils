@@ -52,7 +52,7 @@ def launch_controller(config):
     if config.get("headless"                     , False):
         print("AE:1")
         controller = Controller(platform = CloudRendering,
-                                gpu_device = 0,
+                                gpu_device = config.get("GPU_DEVICE", 0),
                                 gridSize = config.get("GRID_SIZE", constants.GRID_SIZE),
                                 scene = config["scene"],
                                 agentMode = config.get("AGENT_MODE", constants.AGENT_MODE), # above is basic working

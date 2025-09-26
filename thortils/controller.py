@@ -48,52 +48,34 @@ def thor_controller_param(controller, param):
     return controller.initialization_parameters[param]
 
 def launch_controller(config):
-    # If we want to run headless, then we need to add platform=CloudRendering to the parameters
+    # If we want to run headless, then we need to add platform=CloudRendering and gpu_device = 0 to the parameters
     if config.get("headless"                     , False):
-        print("AE:1")
-        controller = Controller(platform = CloudRendering,
-                                gpu_device = 0,
-                                gridSize = config.get("GRID_SIZE", constants.GRID_SIZE),
-                                scene = config["scene"],
-                                agentMode = config.get("AGENT_MODE", constants.AGENT_MODE), # above is basic working
-                                visibilityDistance         = config.get("VISIBILITY_DISTANCE"          ,constants.VISIBILITY_DISTANCE), # 3 below- still working
-                                snapToGrid                 = config.get("SNAP_TO_GRID"                 ,constants.SNAP_TO_GRID),
-                                renderDepthImage           = config.get("RENDER_DEPTH"                 ,constants.RENDER_DEPTH),
-                                renderInstanceSegmentation = config.get("RENDER_INSTANCE_SEGMENTATION" ,constants.RENDER_INSTANCE_SEGMENTATION), # 3 below - image change
-                                renderImage                = config.get("RENDER_IMAGE"                 ,constants.RENDER_IMAGE),
-                                width                      = config.get("IMAGE_WIDTH"                  ,constants.IMAGE_WIDTH),
-                                height                     = config.get("IMAGE_HEIGHT"                 ,constants.IMAGE_HEIGHT),# 3 below - working again
-                                fieldOfView                = config.get("FOV"                          ,constants.FOV),
-                                rotateStepDegrees          = config.get("H_ROTATION"                   ,constants.H_ROTATION),
-                                x_display                  = config.get("x_display"                    , None), # 3 below - still good
-                                host                       = config.get("host"                         , "127.0.0.1"),
-                                port                       = config.get("port"                         , 0),
-                                headless                   = False) # When this is True, I think it expects an image from the above host and port, so don't set it to True if there isn't anything serving images
-                                #headless                   = config.get("headless"                     , False))
+        # controller = Controller(platform = CloudRendering,
+        #                         gpu_device = 0,
+        #                         gridSize = config.get("GRID_SIZE", constants.GRID_SIZE),
+        #                         scene = config["scene"])
+        controller = Controller(
+            scene                      = config["scene"],
+            agentMode                  = config.get("AGENT_MODE"                   ,constants.AGENT_MODE),
+            gridSize                   = config.get("GRID_SIZE"                    ,constants.GRID_SIZE),
+            visibilityDistance         = config.get("VISIBILITY_DISTANCE"          ,constants.VISIBILITY_DISTANCE),
+            snapToGrid                 = config.get("SNAP_TO_GRID"                 ,constants.SNAP_TO_GRID),
+            renderDepthImage           = config.get("RENDER_DEPTH"                 ,constants.RENDER_DEPTH),
+            renderInstanceSegmentation = config.get("RENDER_INSTANCE_SEGMENTATION" ,constants.RENDER_INSTANCE_SEGMENTATION),
+            renderImage                = config.get("RENDER_IMAGE"                 ,constants.RENDER_IMAGE),
+            width                      = config.get("IMAGE_WIDTH"                  ,constants.IMAGE_WIDTH),
+            height                     = config.get("IMAGE_HEIGHT"                 ,constants.IMAGE_HEIGHT),
+            fieldOfView                = config.get("FOV"                          ,constants.FOV),
+            rotateStepDegrees          = config.get("H_ROTATION"                   ,constants.H_ROTATION),
+            x_display                  = config.get("x_display"                    , None),
+            host                       = config.get("host"                         , "127.0.0.1"),
+            port                       = config.get("port"                         , 0),
+            headless                   = False, # When this is True, I think it expects an image from the above host and port, so don't set it to True if there isn't anything serving images # Don't use: config.get("headless", False)
+            platform                   = CloudRendering,
+            gpu_device                 = 0)
 
-        # controller = Controller(
-        #     scene                      = config["scene"],
-        #     agentMode                  = config.get("AGENT_MODE"                   ,constants.AGENT_MODE),
-        #     gridSize                   = config.get("GRID_SIZE"                    ,constants.GRID_SIZE),
-        #     visibilityDistance         = config.get("VISIBILITY_DISTANCE"          ,constants.VISIBILITY_DISTANCE),
-        #     snapToGrid                 = config.get("SNAP_TO_GRID"                 ,constants.SNAP_TO_GRID),
-        #     renderDepthImage           = config.get("RENDER_DEPTH"                 ,constants.RENDER_DEPTH),
-        #     renderInstanceSegmentation = config.get("RENDER_INSTANCE_SEGMENTATION" ,constants.RENDER_INSTANCE_SEGMENTATION),
-        #     renderImage                = config.get("RENDER_IMAGE"                 ,constants.RENDER_IMAGE),
-        #     width                      = config.get("IMAGE_WIDTH"                  ,constants.IMAGE_WIDTH),
-        #     height                     = config.get("IMAGE_HEIGHT"                 ,constants.IMAGE_HEIGHT),
-        #     fieldOfView                = config.get("FOV"                          ,constants.FOV),
-        #     rotateStepDegrees          = config.get("H_ROTATION"                   ,constants.H_ROTATION),
-        #     x_display                  = config.get("x_display"                    , None),
-        #     host                       = config.get("host"                         , "127.0.0.1"),
-        #     port                       = config.get("port"                         , 0),
-        #     headless                   = config.get("headless"                     , False),
-        #     platform                   = CloudRendering,
-        #     gpu_device=0)
-
-        print("TEST1:", controller.step("RotateRight").metadata["lastActionSuccess"])
-        print("Test2:", controller.last_event.cv2img.shape)
-        print("AE:2")
+        #print("TEST1:", controller.step("RotateRight").metadata["lastActionSuccess"])
+        #print("Test2:", controller.last_event.cv2img.shape)
     else:
         controller = Controller(
             scene                      = config["scene"],

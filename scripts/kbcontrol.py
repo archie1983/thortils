@@ -17,6 +17,8 @@ from ai2_thor_model_training.ae_utils import (NavigationUtils, action_mapping,
                                                               room_this_point_belongs_to, get_rooms_ground_truth,
                                                               create_full_grid_from_room_layout, add_buffer_to_unreachable)
 
+from ai2_thor_model_training.training_data_extraction import RobotNavigationControl
+
 from thortils.agent import thor_reachable_positions, thor_agent_position, thor_agent_pose
 from thortils.utils import roundany, PriorityQueue, normalize_angles, euclidean_dist
 
@@ -25,6 +27,81 @@ import numpy as np
 #point = Point(0.5, 0.5)
 #polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 #print(polygon.contains(point))
+
+##
+# Using this class, we can stack objectives of the agent behaviour. E.g., to first achieve the
+# middle of the room and only then look for the doors. Or even find all doors in order.
+##
+class DistanceReductionReward:
+    def __init__(self, scale=1.0):
+        self.scale = scale
+        self.prev_distance = None
+        self.best_distance_so_far = None
+
+    def __call__(self, obs, inventory=None):
+        reward = 0.0
+        distance_left = obs['distance_left']
+
+        if obs['is_first']:
+            self.best_distance_so_far = distance_left
+        else:
+            if self.best_distance_so_far > distance_left:
+                '''
+                if we improved best distance, then reward is the improvement factor
+                '''
+                reward = self.scale * (self.best_distance_so_far - distance_left)
+                self.best_distance_so_far = distance_left
+                print("BIG REW: ", reward)
+            elif self.best_distance_so_far == distance_left:
+                '''
+                if no improvement, then bigger penalty. No movement needs to be discouraged
+                '''
+                reward = -0.3
+            elif self.best_distance_so_far < distance_left and self.prev_distance < distance_left:
+                '''
+                if we have moved away from the target, then penalty by the reduction
+                '''
+                reward = self.scale * (self.prev_distance - distance_left)
+            elif self.best_distance_so_far < distance_left and self.prev_distance > distance_left:
+                '''
+                if we have improved our position from last time, but not yet the best path, then small reward
+                '''
+                reward = 0.05
+            elif self.best_distance_so_far < distance_left and self.prev_distance == distance_left:
+                '''
+                if no improvement since last time, then penalty to discourage not moving
+                '''
+                reward = -0.3
+            else:
+                '''
+                shouldn't happen. If it does, then the above code has error.
+                '''
+                print("CHECK DistanceReductionReward CODE!!!")
+                exit()
+
+        self.prev_distance = distance_left
+
+        return np.float32(reward)
+
+##
+# Issue a reward for achieving the target - once per scene
+##
+class TargetAchievedReward:
+    def __init__(self, epsilon = 0.0):
+        '''
+        :param epsilon: How close is close enough to issue the reward
+        '''
+        self.reward_issued = False
+        self.epsilon = epsilon
+
+    def __call__(self, obs, inventory=None):
+        reward = 0
+        if obs['is_first']:
+            self.reward_issued = False
+        elif (not self.reward_issued and obs['distance_left'] <= self.epsilon):
+            reward = 20
+            self.reward_issued = True
+        return np.float32(reward)
 
 def is_point_inside_room(point_to_test, room_polygon):
     (x, y, z) = point_to_test
@@ -110,6 +187,9 @@ def get_agent_pos_and_rotation(controller):
     return (pos, rtn)
 
 def main(init_func=None, step_func=None):
+    USE_RNC = True
+    if USE_RNC:
+        rnc = RobotNavigationControl()
     parser = argparse.ArgumentParser(
         description="Keyboard control of agent in ai2thor")
     parser.add_argument("-s", "--scene",
@@ -128,8 +208,9 @@ def main(init_func=None, step_func=None):
     print_controls(controls)
 
     dataset = prior.load_dataset("procthor-10k")
-    house = dataset["train"][43] # 10
+    #house = dataset["train"][43] # 10
     #house = dataset["train"][88]
+    house = dataset["test"][658]
     #print(house)
     args.scene = house
 
@@ -139,13 +220,15 @@ def main(init_func=None, step_func=None):
     # GRID_SIZE can be e.g. 0.25, 0.125, 0.1, 0.3. But if we have 0.2 or 0.15, then AI2-Thor returns
     # insane grid locations (e.g. with 0.15 we get (0.39999961853027344, 5.75), which shouldn't be possible).
     # I'm not sure why this happens.
-    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.125, "headless": True})
+    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.125, "headless": False})
     grid_size = controller.initialization_parameters["gridSize"]
 
     # AE: Required infrastructure for calculating path lengths
     nu = NavigationUtils(step = grid_size)
     atu = AI2THORUtils()
     atu.set_controller(controller)
+    if USE_RNC:
+        rnc.set_controller(controller)
 
     reachable_positions = [
         tuple(map(lambda x: round(roundany(x, grid_size), 2), pos))
@@ -182,6 +265,14 @@ def main(init_func=None, step_func=None):
     if init_func is not None:
         config = init_func(controller)
 
+    reward_close_enough = 0.25
+    rewards = [
+        DistanceReductionReward(scale=1.0),
+        TargetAchievedReward(epsilon=reward_close_enough)
+    ]
+    is_first = True
+    current_target_point = None
+
     while True:
         k = getch()
         if k == "q":
@@ -201,16 +292,30 @@ def main(init_func=None, step_func=None):
                     params["moveMagnitude"] = grid_size #0.25
 
             if action == "Teleport":
-                params["position"] = dict(x=5.62, y=0.9009997844696045, z=3.5)
-                #params["position"] = dict(x=7.0, y=0.9009997844696045, z=5.625)
-                params["rotation"] = dict(x=0.0, y=270, z=0.0)
-                # self.controller.step(action="Teleport", **pos_navigate_to)
+                if USE_RNC:
+                    # [1.0, 0.88, 5.75], [0.0, 180, 0.0]
+                    place_with_rtn = (1.0, 5.75, 180)
+                    rnc.teleport_to(place_with_rtn)
+                else:
+                    # [1.0, 0.88, 5.75], [0.0, 180, 0.0]
+                    params["position"] = dict(x=1.00, y=0.9009997844696045, z=5.75)
+                    #params["position"] = dict(x=7.0, y=0.9009997844696045, z=5.625)
+                    params["rotation"] = dict(x=0.0, y=180, z=0.0)
+                    # self.controller.step(action="Teleport", **pos_navigate_to)
+                    event = controller.step(action=action, **params)
+                    event = controller.step(action="Pass")
+            else:
+                print("MOVE PARAMS: ", params)
+                if USE_RNC:
+                    #raw_action = index_to_action(int(action['action']))
+                    rnc.execute_action(action, moveMagnitude=grid_size, grid_size=grid_size, adhere_to_grid=True)
+                else:
+                    event = controller.step(action=action, **params)
 
-            print("MOVE PARAMS: ", params)
-            event = controller.step(action=action, **params)
-            event = controller.step(action="Pass")
-            if step_func is not None:
-                step_func(event, config)
+                event = controller.step(action="Pass")
+
+                if step_func is not None:
+                    step_func(event, config)
 
             pose = thortils.thor_agent_pose(controller, as_tuple=True)
 
@@ -242,11 +347,12 @@ def main(init_func=None, step_func=None):
             place_with_rtn = (cur_pos[0][0], cur_pos[0][2], cur_pos[1][1])
 
             try:
-                current_target_point = nu.find_door_target(place_with_rtn,
-                                                                     rooms_in_habitat,
-                                                                     reachable_positions,
-                                                                     house,
-                                                                     controller, close_enough=0.25, step=grid_size, extend_path=True)
+                if current_target_point == None:
+                    current_target_point = nu.find_door_target(place_with_rtn,
+                                                                         rooms_in_habitat,
+                                                                         reachable_positions,
+                                                                         house,
+                                                                         controller, close_enough=0.25, step=grid_size, extend_path=True)
 
                 t1 = time.time()
                 path_length = nu.get_path_cost_to_target_point(pose,
@@ -260,6 +366,12 @@ def main(init_func=None, step_func=None):
             print("AE: Path Length: ", path_length)
             (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
             print("AE: Path: ", cur_path)
+
+            obs = dict(is_first = is_first, distance_left = path_length)
+            reward = sum([fn(obs) for fn in rewards])
+            print("REWARD at this step: ", reward)
+            is_first = False
+
             atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
                                 show_unreachable_pos = True,
                                 show_reachable_pos = False)

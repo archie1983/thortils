@@ -210,7 +210,8 @@ def main(init_func=None, step_func=None):
     dataset = prior.load_dataset("procthor-10k")
     #house = dataset["train"][43] # 10
     #house = dataset["train"][88]
-    house = dataset["test"][658]
+    #house = dataset["test"][658]
+    house = dataset["test"][709]
     #print(house)
     args.scene = house
 
@@ -294,7 +295,9 @@ def main(init_func=None, step_func=None):
             if action == "Teleport":
                 if USE_RNC:
                     # [1.0, 0.88, 5.75], [0.0, 180, 0.0]
-                    place_with_rtn = (1.0, 5.75, 180)
+                    #place_with_rtn = (1.0, 5.75, 180)
+                    # [4.12, 0.88, 5.62], [0.0, 315, 0.0]
+                    place_with_rtn = (4.12, 5.62, 315)
                     rnc.teleport_to(place_with_rtn)
                 else:
                     # [1.0, 0.88, 5.75], [0.0, 180, 0.0]

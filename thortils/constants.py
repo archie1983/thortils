@@ -77,7 +77,36 @@ EXCLUDED_RECEPTACLES=[]   # not actually used
 
 #-------------------------------------------------------------------------------
 # What scenes are we using
-from thortils.scene import ithor_scene_names
+#from thortils.scene import ithor_scene_names
+
+def ithor_scene_names(scene_type="kitchen", levels=None):
+    """
+    Returns a list of scene names.
+
+    Args:
+        scene_type (str): type of scene e.g. kitchen
+        levels (enumerable): the levels you want to include.
+            Note that this should always contain numbers greater than
+            or equal to 1 and less than or equal to 30,
+            regardless of scene_type.
+    """
+    if levels is not None:
+        if max(levels) > 30 or min(levels) < 1:
+            raise ValueError("Invalid levels. Must be >= 1 and < 31")
+    scenes = dict(
+        kitchen = [f"FloorPlan{i}" for i in range(1, 31)],
+        living_room = [f"FloorPlan{200 + i}" for i in range(1, 31)],
+        bedroom = [f"FloorPlan{300 + i}" for i in range(1, 31)],
+        bathroom = [f"FloorPlan{400 + i}" for i in range(1, 31)]
+    )
+    if scene_type.lower() in scenes:
+        if levels is None:
+            return scenes[scene_type]
+        else:
+            return [scenes[scene_type][i-1] for i in levels]
+    raise ValueError("Unknown scene type {}".format(scene_type))
+
+
 LEVELS = {
     "kitchen": [i for i in range(1, 31)],
     "living_room": [i for i in range(1, 31)],

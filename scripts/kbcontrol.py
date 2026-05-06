@@ -24,6 +24,8 @@ from thortils.utils import roundany, PriorityQueue, normalize_angles, euclidean_
 
 import numpy as np
 
+from ae_path_compare import PathCompareClient
+
 #point = Point(0.5, 0.5)
 #polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 #print(polygon.contains(point))
@@ -51,7 +53,7 @@ class DistanceReductionReward:
                 '''
                 reward = self.scale * (self.best_distance_so_far - distance_left)
                 self.best_distance_so_far = distance_left
-                print("BIG REW: ", reward)
+                #print("BIG REW: ", reward)
             elif self.best_distance_so_far == distance_left:
                 '''
                 if no improvement, then bigger penalty. No movement needs to be discouraged
@@ -156,6 +158,15 @@ def print_controls(controls):
     {reverse['Teleport']}
 (Teleport to defined place)
 
+    1
+(take sequence pics)
+
+    2
+(send sequence pics)
+
+    3
+(compare sequence pics)
+
     q
 (quit)
     """
@@ -180,6 +191,8 @@ def store_frame(event):
     cnt+=1
     os.makedirs(target_dir, exist_ok=True)
     cv2.imwrite(os.path.join(target_dir, str(cnt) + ".png"), img)
+
+    return img
 
 def get_agent_pos_and_rotation(controller):
     pos = (controller.last_event.metadata["agent"]["position"]["x"], controller.last_event.metadata["agent"]["position"]["y"], controller.last_event.metadata["agent"]["position"]["z"])
@@ -211,7 +224,8 @@ def main(init_func=None, step_func=None):
     #house = dataset["train"][43] # 10
     #house = dataset["train"][88]
     #house = dataset["test"][658]
-    house = dataset["test"][709]
+    #house = dataset["test"][709]
+    house = dataset["test"][686]
     #print(house)
     args.scene = house
 
@@ -227,6 +241,7 @@ def main(init_func=None, step_func=None):
     # AE: Required infrastructure for calculating path lengths
     nu = NavigationUtils(step = grid_size)
     atu = AI2THORUtils()
+    agent = PathCompareClient(jetson_ip="192.168.0.109", port=5555)
     atu.set_controller(controller)
     if USE_RNC:
         rnc.set_controller(controller)
@@ -273,12 +288,32 @@ def main(init_func=None, step_func=None):
     ]
     is_first = True
     current_target_point = None
+    store_ref_path = False
+    path_id = 0
 
     while True:
         k = getch()
         if k == "q":
             print("bye.")
             break
+        elif k == "1":
+            store_ref_path = True
+            path_id += 1
+            ref_path_batch = []
+            print("Starting taking pics for a sequence")
+        elif k == "2":
+            print("Sending sequence pics")
+            store_ref_path = False
+            # Stack into single numpy array
+            image_batch = np.stack(ref_path_batch, axis=0)
+            print(agent.store_ref_path(image_batch, str(path_id)))
+            # print(f"Batch shape: {image_batch.shape}")
+            # print(f"Batch dtype: {image_batch.dtype}")
+        elif k == "3":
+            print("Comparing sequence pics")
+            store_ref_path = False
+            image_batch = np.stack(ref_path_batch, axis=0)
+            print(agent.qry_path_similarity(image_batch))
 
         if k in controls:
             action = controls[k]
@@ -297,7 +332,9 @@ def main(init_func=None, step_func=None):
                     # [1.0, 0.88, 5.75], [0.0, 180, 0.0]
                     #place_with_rtn = (1.0, 5.75, 180)
                     # [4.12, 0.88, 5.62], [0.0, 315, 0.0]
-                    place_with_rtn = (4.12, 5.62, 315)
+                    #place_with_rtn = (4.12, 5.62, 315)
+                    #[[10.5, 0.88, 7.5], [0.0, 270, 0.0]]
+                    place_with_rtn = (10.5, 7.5, 270)
                     rnc.teleport_to(place_with_rtn)
                 else:
                     # [1.0, 0.88, 5.75], [0.0, 180, 0.0]
@@ -308,7 +345,7 @@ def main(init_func=None, step_func=None):
                     event = controller.step(action=action, **params)
                     event = controller.step(action="Pass")
             else:
-                print("MOVE PARAMS: ", params)
+                #print("MOVE PARAMS: ", params)
                 if USE_RNC:
                     #raw_action = index_to_action(int(action['action']))
                     rnc.execute_action(action, moveMagnitude=grid_size, grid_size=grid_size, adhere_to_grid=True)
@@ -326,7 +363,9 @@ def main(init_func=None, step_func=None):
             (p, r) = pose
             objs = get_visible_object_names(event)
 
-            store_frame(event)
+            cur_img = store_frame(event)
+            if store_ref_path:
+                ref_path_batch.append(cur_img)
 
             #print("{} | Agent pose: {}".format(k, pose) + " Room: " + what_room_is_point_in(rooms, p) + " ## " + str(objs))
             print("{} | Agent pose: {}".format(k, pose))
@@ -356,28 +395,31 @@ def main(init_func=None, step_func=None):
                                                                          reachable_positions,
                                                                          house,
                                                                          controller, close_enough=0.25, step=grid_size, extend_path=True)
-
+                    current_target_point = current_target_point[0]
                 t1 = time.time()
+
+                #print("current_target_point: ", current_target_point)
                 path_length = nu.get_path_cost_to_target_point(pose,
                                                                current_target_point,
-                                                               reachable_positions, close_enough=0.25, step=grid_size, debug=True)
-                print("AE: path plan time: ", (time.time() - t1))
+                                                               reachable_positions, close_enough=0.25, step=grid_size, debug=False)
+                #print("AE: path plan time: ", (time.time() - t1))
             except ValueError as e:
                 path_length = 0
                 print("AE: No Path Found", e)
 
-            print("AE: Path Length: ", path_length)
+            #print("AE: Path Length: ", path_length)
             (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
-            print("AE: Path: ", cur_path)
+            #print("AE: Path: ", cur_path)
 
             obs = dict(is_first = is_first, distance_left = path_length)
             reward = sum([fn(obs) for fn in rewards])
-            print("REWARD at this step: ", reward)
+            #print("REWARD at this step: ", reward)
             is_first = False
 
-            atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
-                                show_unreachable_pos = True,
-                                show_reachable_pos = False)
+            # Visualize path and obstructed space
+            # atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
+            #                     show_unreachable_pos = True,
+            #                     show_reachable_pos = False)
             #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 
 if __name__ == "__main__":

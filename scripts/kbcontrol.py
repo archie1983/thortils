@@ -30,19 +30,17 @@ from ae_path_compare import PathCompareClient
 #polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 #print(polygon.contains(point))
 
-##
-# Using this class, we can stack objectives of the agent behaviour. E.g., to first achieve the
-# middle of the room and only then look for the doors. Or even find all doors in order.
-##
 class DistanceReductionReward:
     def __init__(self, scale=1.0):
         self.scale = scale
         self.prev_distance = None
         self.best_distance_so_far = None
 
-    def __call__(self, obs, inventory=None):
+    def __call__(self, obs, extra_obs, action):
+        #print("D1")
         reward = 0.0
-        distance_left = obs['distance_left']
+        #distance_left = obs['distance_left']
+        distance_left = extra_obs['distanceleft']
 
         if obs['is_first']:
             self.best_distance_so_far = distance_left
@@ -51,29 +49,33 @@ class DistanceReductionReward:
                 '''
                 if we improved best distance, then reward is the improvement factor
                 '''
-                reward = self.scale * (self.best_distance_so_far - distance_left)
+                #reward = self.scale * (self.best_distance_so_far - distance_left)
+                reward = 1
                 self.best_distance_so_far = distance_left
                 #print("BIG REW: ", reward)
-            elif self.best_distance_so_far == distance_left:
-                '''
-                if no improvement, then bigger penalty. No movement needs to be discouraged
-                '''
-                reward = -0.3
+                #print("r", reward, end="", sep="")
+                print("r", end="", sep="")
+            # elif self.best_distance_so_far == distance_left:
+            #     '''
+            #     if no improvement, then bigger penalty. No movement needs to be discouraged
+            #     '''
+            #     reward = -0.25
             elif self.best_distance_so_far < distance_left and self.prev_distance < distance_left:
                 '''
                 if we have moved away from the target, then penalty by the reduction
                 '''
-                reward = self.scale * (self.prev_distance - distance_left)
-            elif self.best_distance_so_far < distance_left and self.prev_distance > distance_left:
+                #reward = self.scale * (self.prev_distance - distance_left)
+                reward = -0.5
+            elif self.best_distance_so_far <= distance_left and self.prev_distance > distance_left:
                 '''
                 if we have improved our position from last time, but not yet the best path, then small reward
                 '''
-                reward = 0.05
-            elif self.best_distance_so_far < distance_left and self.prev_distance == distance_left:
+                reward = 0.25
+            elif self.best_distance_so_far <= distance_left and self.prev_distance == distance_left:
                 '''
                 if no improvement since last time, then penalty to discourage not moving
                 '''
-                reward = -0.3
+                reward = -0.25
             else:
                 '''
                 shouldn't happen. If it does, then the above code has error.
@@ -82,27 +84,86 @@ class DistanceReductionReward:
                 exit()
 
         self.prev_distance = distance_left
+        #print("D2")
 
         return np.float32(reward)
+
+class StepCountPenalizer:
+    def __init__(self, scale=1.0):
+        self.scale = scale
+        self.steps_done = 0
+
+    def __call__(self, obs, extra_obs, action):
+        reward = 0.0
+        if obs['is_first']:
+            self.steps_done = 0
+        else:
+            self.steps_done += 1
+
+        if extra_obs['all_target_dists_initial'] is not None and len(extra_obs['all_target_dists_initial']) > 0 and self.steps_done > 2 * np.max(extra_obs['all_target_dists_initial']):
+            reward = -0.25
+        #if self.steps_done > extra_obs['initial_distance']:
+        #    reward = -0.1
+
+        return np.float32(reward * self.scale)
 
 ##
 # Issue a reward for achieving the target - once per scene
 ##
-class TargetAchievedReward:
-    def __init__(self, epsilon = 0.0):
+class TargetAchievedRewardForDoor:
+    def __init__(self, epsilon = 0.0, min_steps_in_new_room = 3, max_steps_in_new_room = 10):
         '''
         :param epsilon: How close is close enough to issue the reward
         '''
         self.reward_issued = False
+        self.min_steps_in_new_room = min_steps_in_new_room
+        self.max_steps_in_new_room = max_steps_in_new_room
         self.epsilon = epsilon
+        self.steps_done = 0
 
-    def __call__(self, obs, inventory=None):
+    def __call__(self, obs, extra_obs, stop_action = False):
+        #print("T1")
         reward = 0
         if obs['is_first']:
             self.reward_issued = False
-        elif (not self.reward_issued and obs['distance_left'] <= self.epsilon):
-            reward = 20
+            self.steps_done = 0
+        elif not self.reward_issued and stop_action:
+            '''
+            We only want to issue this reward once the STOP action has been issued by the model. And at that point we will calculate
+            how much we award based on what has been achieved.
+            '''
+            # high reward for achieving epsilon requirement for any door
+            for dist in extra_obs['all_target_dists']:
+                if dist <= self.epsilon:
+                    reward += 100
+                    break
+            # high reward for correct amount of steps in the new room
+            if (extra_obs['stepsafterroomchange'] <= self.max_steps_in_new_room and extra_obs['stepsafterroomchange'] >= self.min_steps_in_new_room):
+                reward += 100
+
+            # Participation prize if any of the distances have become smaller
+            # Participation prize equals to the best reduction of the distances
+            if extra_obs['all_target_dists_initial'] is not None and len(extra_obs['all_target_dists']) == len(extra_obs['all_target_dists_initial']) and len(extra_obs['all_target_dists']) > 0:
+                reward += 2 * max([d1 - d2 for d1, d2 in zip(extra_obs['all_target_dists_initial'], extra_obs['all_target_dists'])])
+
+            # If none of the above rewards have been earned, then check if it needs a penalty for
+            # early STOP (not walking enough to get even through the nearest door)
+            if reward <= 0:
+                if extra_obs['all_target_dists_initial'] is not None and len(extra_obs['all_target_dists_initial']) > 0:
+                    min_distance_walk = np.min(extra_obs['all_target_dists_initial'])
+                    mean_distance_walk = np.mean(extra_obs['all_target_dists_initial'])
+                else:
+                    min_distance_walk = extra_obs['initial_distance']
+                    mean_distance_walk = min_distance_walk
+                if self.steps_done < mean_distance_walk:
+                    reward = -1 * (min_distance_walk - self.steps_done)
+
+                reward = max(reward, -100)
+
             self.reward_issued = True
+            #print("final reward: ", reward, " = ", extra_obs['initial_distance'], " - ", extra_obs['distanceleft'])
+        else:
+            self.steps_done += 1
         return np.float32(reward)
 
 def is_point_inside_room(point_to_test, room_polygon):
@@ -167,6 +228,9 @@ def print_controls(controls):
     3
 (compare sequence pics)
 
+    s
+(Simulate STOP)
+
     q
 (quit)
     """
@@ -199,6 +263,15 @@ def get_agent_pos_and_rotation(controller):
     rtn = (controller.last_event.metadata["agent"]["rotation"]["x"], controller.last_event.metadata["agent"]["rotation"]["y"], controller.last_event.metadata["agent"]["rotation"]["z"])
     return (pos, rtn)
 
+def euclidean_dist_to_all_targets(all_door_targets, cur_pos):
+    dists = []
+    if all_door_targets != None:
+        for dt in all_door_targets:
+            p1 = (dt['pos']['x'], dt['pos']['z'])
+            p2 = cur_pos
+            dists.append(euclidean_dist(p1, p2))
+    return dists
+
 def main(init_func=None, step_func=None):
     USE_RNC = True
     if USE_RNC:
@@ -225,7 +298,7 @@ def main(init_func=None, step_func=None):
     #house = dataset["train"][88]
     #house = dataset["test"][658]
     #house = dataset["test"][709]
-    house = dataset["test"][686]
+    house = dataset["test"][858]
     #print(house)
     args.scene = house
 
@@ -235,7 +308,13 @@ def main(init_func=None, step_func=None):
     # GRID_SIZE can be e.g. 0.25, 0.125, 0.1, 0.3. But if we have 0.2 or 0.15, then AI2-Thor returns
     # insane grid locations (e.g. with 0.15 we get (0.39999961853027344, 5.75), which shouldn't be possible).
     # I'm not sure why this happens.
-    controller = thortils.launch_controller({"scene": args.scene, "VISIBILITY_DISTANCE": 3.0, "GRID_SIZE": 0.125, "headless": False})
+    controller = thortils.launch_controller({"scene": args.scene,
+                                             "VISIBILITY_DISTANCE": 3.0,
+                                             "IMAGE_WIDTH": 600,
+                                             "IMAGE_HEIGHT": 600,
+                                             "GRID_SIZE": 0.125,
+                                             "headless": False,
+                                             "quality": 'Low'})
     grid_size = controller.initialization_parameters["gridSize"]
 
     # AE: Required infrastructure for calculating path lengths
@@ -283,13 +362,22 @@ def main(init_func=None, step_func=None):
 
     reward_close_enough = 0.25
     rewards = [
+        StepCountPenalizer(scale=1.0),
         DistanceReductionReward(scale=1.0),
-        TargetAchievedReward(epsilon=reward_close_enough)
+        TargetAchievedRewardForDoor(epsilon=reward_close_enough)
     ]
     is_first = True
     current_target_point = None
     store_ref_path = False
     path_id = 0
+
+    steps_in_new_room = 0
+    cur_pos = rnc.get_agent_pos_and_rotation()
+    start_pos = (cur_pos[0][0], cur_pos[0][2])
+    starting_room = room_this_point_belongs_to(rooms_in_habitat, cur_pos[0])
+    all_target_dists_initial = None
+    all_target_dists = None
+    is_stop_simul = False
 
     while True:
         k = getch()
@@ -314,6 +402,9 @@ def main(init_func=None, step_func=None):
             store_ref_path = False
             image_batch = np.stack(ref_path_batch, axis=0)
             print(agent.qry_path_similarity(image_batch))
+        elif k == "s":
+            print("simulating STOP")
+            is_stop_simul = True
 
         if k in controls:
             action = controls[k]
@@ -390,19 +481,24 @@ def main(init_func=None, step_func=None):
 
             try:
                 if current_target_point == None:
-                    current_target_point = nu.find_door_target(place_with_rtn,
-                                                                         rooms_in_habitat,
-                                                                         reachable_positions,
-                                                                         house,
-                                                                         controller, close_enough=0.25, step=grid_size, extend_path=True)
-                    current_target_point = current_target_point[0]
-                t1 = time.time()
-
-                #print("current_target_point: ", current_target_point)
+                    current_target_point, all_door_targets = nu.find_door_target(place_with_rtn,
+                                                                                 rooms_in_habitat,
+                                                                                 reachable_positions,
+                                                                                 house,
+                                                                                 controller, close_enough=0.25,
+                                                                                 step=grid_size, extend_path=True)
+                    #current_target_point = current_target_point[0]
                 path_length = nu.get_path_cost_to_target_point(pose,
                                                                current_target_point,
-                                                               reachable_positions, close_enough=0.25, step=grid_size, debug=False)
-                #print("AE: path plan time: ", (time.time() - t1))
+                                                               reachable_positions, close_enough=0.25,
+                                                               step=grid_size, debug=False)
+                # print("AE: path plan time: ", (time.time() - t1))
+
+                t1 = time.time()
+
+                # if we've been successful so far, then we can now look up room type
+                trg_pos_xy = (current_target_point.x, "", current_target_point.y)
+                #self.target_room = room_this_point_belongs_to(self.rooms_in_habitat, trg_pos_xy)
             except ValueError as e:
                 path_length = 0
                 print("AE: No Path Found", e)
@@ -411,10 +507,42 @@ def main(init_func=None, step_func=None):
             (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
             #print("AE: Path: ", cur_path)
 
+            cur_pos_xy = (cur_pos[0][0], cur_pos[0][2])
+            current_room = room_this_point_belongs_to(rooms_in_habitat, cur_pos[0])
+
+            if starting_room is not None and current_room != starting_room:
+                steps_in_new_room += 1
+                if steps_in_new_room > 15:
+                    steps_in_new_room = 0
+                    starting_room = current_room
+
+            all_current_trg_dists = euclidean_dist_to_all_targets(all_door_targets, cur_pos_xy)
+            if all_target_dists_initial == None:
+                all_target_dists_initial = all_current_trg_dists
+
             obs = dict(is_first = is_first, distance_left = path_length)
-            reward = sum([fn(obs) for fn in rewards])
-            #print("REWARD at this step: ", reward)
+            extra_obs = dict(distanceleft = path_length,
+                             stepsafterroomchange = steps_in_new_room,
+                             all_target_dists = all_current_trg_dists,
+                             all_target_dists_initial = all_target_dists_initial)
+            r = 0
+            cr = 0
+            for fn in rewards:
+                cr = fn(obs, extra_obs, is_stop_simul)
+                r += cr
+                print("RT: ", fn.__class__, " : ", cr)
+            print("REWARD at this steo: ", r, " extra_obs: ", extra_obs)
+
+            # reward = sum([fn(obs, extra_obs, is_stop_simul) for fn in rewards])
+            # print("REWARD at this step: ", reward, " extra_obs: ", extra_obs)
+
             is_first = False
+            if is_stop_simul:
+                is_stop_simul = False
+                is_first = True
+
+            all_visible_doors = nu.get_all_visible_doors(controller)
+            print("DOORVIS: ", len(all_visible_doors))
 
             # Visualize path and obstructed space
             # atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,

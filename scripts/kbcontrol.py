@@ -100,7 +100,7 @@ class StepCountPenalizer:
         else:
             self.steps_done += 1
 
-        if extra_obs['all_target_dists_initial'] is not None and len(extra_obs['all_target_dists_initial']) > 0 and self.steps_done > 2 * np.max(extra_obs['all_target_dists_initial']):
+        if extra_obs['all_target_dists_initial'] is not None and len(extra_obs['all_target_dists_initial']) > 0 and self.steps_done > 4 * np.max(extra_obs['all_target_dists_initial']):
             reward = -0.25
         #if self.steps_done > extra_obs['initial_distance']:
         #    reward = -0.1
@@ -137,6 +137,10 @@ class TargetAchievedRewardForDoor:
                 if dist <= self.epsilon:
                     reward += 100
                     break
+
+            if (extra_obs['stepsafterroomchange'] > 0):
+                reward += 100
+
             # high reward for correct amount of steps in the new room
             if (extra_obs['stepsafterroomchange'] <= self.max_steps_in_new_room and extra_obs['stepsafterroomchange'] >= self.min_steps_in_new_room):
                 reward += 100
@@ -513,7 +517,7 @@ def main(init_func=None, step_func=None):
             if starting_room is not None and current_room != starting_room:
                 steps_in_new_room += 1
                 if steps_in_new_room > 15:
-                    steps_in_new_room = 0
+                    #steps_in_new_room = 0
                     starting_room = current_room
 
             all_current_trg_dists = euclidean_dist_to_all_targets(all_door_targets, cur_pos_xy)
@@ -545,10 +549,10 @@ def main(init_func=None, step_func=None):
             print("DOORVIS: ", len(all_visible_doors))
 
             # Visualize path and obstructed space
-            # atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
-            #                     show_unreachable_pos = True,
-            #                     show_reachable_pos = False)
-            #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
+            atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
+                                show_unreachable_pos = True,
+                                show_reachable_pos = False)
+            atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 
 if __name__ == "__main__":
     main()

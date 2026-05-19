@@ -510,7 +510,7 @@ def main(init_func=None, step_func=None):
                                                                                  house,
                                                                                  controller, close_enough=0.25,
                                                                                  step=grid_size, extend_path=True)
-                    current_target_point = current_target_point[0]
+                    #current_target_point = current_target_point[0]
                     t1 = time.time()
 
                     print("current_target_point: ", current_target_point)
@@ -528,7 +528,7 @@ def main(init_func=None, step_func=None):
                 print("AE: No Path Found", e)
 
             #print("AE: Path Length: ", path_length)
-            #(cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
+            (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
             #print("AE: Path: ", cur_path)
 
             cur_pos_xy = (cur_pos[0][0], cur_pos[0][2])
@@ -569,10 +569,10 @@ def main(init_func=None, step_func=None):
             print("DOORVIS: ", len(all_visible_doors))
 
             # Visualize path and obstructed space
-            atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
-                                show_unreachable_pos = True,
-                                show_reachable_pos = False)
-            atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
+            # atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
+            #                     show_unreachable_pos = True,
+            #                     show_reachable_pos = False)
+            # atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 
 if __name__ == "__main__":
     main()

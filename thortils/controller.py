@@ -49,6 +49,7 @@ def thor_controller_param(controller, param):
 
 def launch_controller(config):
     # If we want to run headless, then we need to add platform=CloudRendering and gpu_device = 0 to the parameters
+    #print("AE: ", config.get("RENDER_INSTANCE_SEGMENTATION" ,constants.RENDER_INSTANCE_SEGMENTATION), " ", config.get("headless"                     , False))
     if config.get("headless"                     , False):
         # controller = Controller(platform = CloudRendering,
         #                         gpu_device = 0,

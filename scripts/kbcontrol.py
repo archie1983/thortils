@@ -5,6 +5,8 @@ import thortils.constants as constants
 from thortils.utils import getch
 import argparse
 import time, cv2, os
+#from ai2thor.controller import Controller
+from yolo_utils import YoloUtils
 
 import prior
 
@@ -24,7 +26,7 @@ from thortils.utils import roundany, PriorityQueue, normalize_angles, euclidean_
 
 import numpy as np
 
-from ae_path_compare import PathCompareClient
+#from ae_path_compare import PathCompareClient
 
 #point = Point(0.5, 0.5)
 #polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
@@ -311,7 +313,10 @@ def main(init_func=None, step_func=None):
     #house = dataset["train"][88]
     #house = dataset["test"][658]
     #house = dataset["test"][709]
-    house = dataset["test"][858]
+    #house = dataset["test"][686]
+    #house = dataset["test"][878]
+    house = dataset["test"][632]
+    #house = dataset["test"][858]
     #print(house)
     args.scene = house
 
@@ -323,17 +328,29 @@ def main(init_func=None, step_func=None):
     # I'm not sure why this happens.
     controller = thortils.launch_controller({"scene": args.scene,
                                              "VISIBILITY_DISTANCE": 3.0,
+                                             "RENDER_INSTANCE_SEGMENTATION": True,
                                              "IMAGE_WIDTH": 600,
                                              "IMAGE_HEIGHT": 600,
                                              "GRID_SIZE": 0.125,
                                              "headless": False,
                                              "quality": 'Low'})
+
+    # controller = Controller(
+    #     scene="FloorPlan1",
+    #     renderInstanceSegmentation=True,
+    #     width=640,
+    #     height=640
+    # )
+
     grid_size = controller.initialization_parameters["gridSize"]
+    #grid_size = 0.25
 
     # AE: Required infrastructure for calculating path lengths
     nu = NavigationUtils(step = grid_size)
     atu = AI2THORUtils()
-    agent = PathCompareClient(jetson_ip="192.168.0.109", port=5555)
+    yu = YoloUtils()
+    #agent = PathCompareClient(jetson_ip="192.168.0.109", port=5555)
+    agent = None
     atu.set_controller(controller)
     if USE_RNC:
         rnc.set_controller(controller)
@@ -458,6 +475,8 @@ def main(init_func=None, step_func=None):
 
                 event = controller.step(action="Pass")
 
+                print(yu.extract_detections(event))
+
                 if step_func is not None:
                     step_func(event, config)
 
@@ -501,14 +520,15 @@ def main(init_func=None, step_func=None):
                                                                                  controller, close_enough=0.25,
                                                                                  step=grid_size, extend_path=True)
                     #current_target_point = current_target_point[0]
-                path_length = nu.get_path_cost_to_target_point(pose,
+                    t1 = time.time()
+
+                    print("current_target_point: ", current_target_point)
+
+                    path_length = nu.get_path_cost_to_target_point(pose,
                                                                current_target_point,
                                                                reachable_positions, close_enough=0.25,
                                                                step=grid_size, debug=False)
-                # print("AE: path plan time: ", (time.time() - t1))
-
-                t1 = time.time()
-
+                    print("AE: path plan time: ", (time.time() - t1))
                 # if we've been successful so far, then we can now look up room type
                 trg_pos_xy = (current_target_point.x, "", current_target_point.y)
                 #self.target_room = room_this_point_belongs_to(self.rooms_in_habitat, trg_pos_xy)

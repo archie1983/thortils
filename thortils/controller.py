@@ -72,6 +72,7 @@ def launch_controller(config):
             port                       = config.get("port"                         , 0),
             headless                   = False, # When this is True, I think it expects an image from the above host and port, so don't set it to True if there isn't anything serving images # Don't use: config.get("headless", False)
             platform                   = CloudRendering,
+            quality                    = config.get("quality"                   ,'High'),
             gpu_device                 = config.get("GPU_DEVICE", 0))
 
         #print("TEST1:", controller.step("RotateRight").metadata["lastActionSuccess"])

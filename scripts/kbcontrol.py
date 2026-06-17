@@ -136,19 +136,23 @@ class TargetAchievedRewardForDoor:
             for dist in extra_obs['all_target_dists']:
                 if dist <= self.epsilon:
                     reward += 100
+                    #print("R1")
                     break
 
             if (extra_obs['stepsafterroomchange'] > 0):
                 reward += 100
+                #print("R2")
 
             # high reward for correct amount of steps in the new room
             if (extra_obs['stepsafterroomchange'] <= self.max_steps_in_new_room and extra_obs['stepsafterroomchange'] >= self.min_steps_in_new_room):
                 reward += 100
+                #print("R3")
 
             # Participation prize if any of the distances have become smaller
             # Participation prize equals to the best reduction of the distances
             if extra_obs['all_target_dists_initial'] is not None and len(extra_obs['all_target_dists']) == len(extra_obs['all_target_dists_initial']) and len(extra_obs['all_target_dists']) > 0:
                 reward += 2 * max([d1 - d2 for d1, d2 in zip(extra_obs['all_target_dists_initial'], extra_obs['all_target_dists'])])
+                #print("R4", 2 * max([d1 - d2 for d1, d2 in zip(extra_obs['all_target_dists_initial'], extra_obs['all_target_dists'])]))
 
             # If none of the above rewards have been earned, then check if it needs a penalty for
             # early STOP (not walking enough to get even through the nearest door)
@@ -156,11 +160,16 @@ class TargetAchievedRewardForDoor:
                 if extra_obs['all_target_dists_initial'] is not None and len(extra_obs['all_target_dists_initial']) > 0:
                     min_distance_walk = np.min(extra_obs['all_target_dists_initial'])
                     mean_distance_walk = np.mean(extra_obs['all_target_dists_initial'])
+                    #print("R5.1")
                 else:
                     min_distance_walk = extra_obs['initial_distance']
                     mean_distance_walk = min_distance_walk
-                if self.steps_done < mean_distance_walk:
-                    reward = -1 * (min_distance_walk - self.steps_done)
+                    #print("R5.2")
+
+                #print("sd, mdW: ", self.steps_done, mean_distance_walk)
+                if self.steps_done < 4 * mean_distance_walk:
+                    reward = -1 * (4 * min_distance_walk - self.steps_done)
+                    #print("R5.3")
 
                 reward = max(reward, -100)
 
@@ -509,7 +518,7 @@ def main(init_func=None, step_func=None):
 
             #print("AE: Path Length: ", path_length)
             (cur_path, reachable_positions, start, dest) = nu.get_last_path_and_params()
-            #print("AE: Path: ", cur_path)
+            print("AE: Path: ", len(cur_path), "v@@ ", cur_path)
 
             cur_pos_xy = (cur_pos[0][0], cur_pos[0][2])
             current_room = room_this_point_belongs_to(rooms_in_habitat, cur_pos[0])
@@ -549,10 +558,10 @@ def main(init_func=None, step_func=None):
             print("DOORVIS: ", len(all_visible_doors))
 
             # Visualize path and obstructed space
-            atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
-                                show_unreachable_pos = True,
-                                show_reachable_pos = False)
-            atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
+            #atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
+            #                    show_unreachable_pos = True,
+            #                    show_reachable_pos = False)
+            #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 
 if __name__ == "__main__":
     main()

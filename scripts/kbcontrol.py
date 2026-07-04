@@ -6,14 +6,15 @@ from thortils.utils import getch
 import argparse
 import time, cv2, os
 #from ai2thor.controller import Controller
-from yolo_utils import YoloUtils
+#from yolo_utils import YoloUtils
 
 import prior
 
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
+from shapely.prepared import prep
 
-from ai2_thor_model_training.ae_utils import (NavigationUtils, action_mapping,
+from ai2_thor_model_training.ae_utils import (NavigationUtils, NavigationActions, action_mapping,
                                                               action_to_index, index_to_action, inverted_action_mapping,
                                                               AI2THORUtils, get_path_length, get_centre_of_the_room,
                                                               room_this_point_belongs_to, get_rooms_ground_truth,
@@ -193,6 +194,12 @@ def what_room_is_point_in(rooms, point):
             return room[0]
     return "NONE"
 
+def is_2d_point_inside_room(point_to_test, room_polygon):
+    (x, y) = point_to_test
+    point = Point(x, y)
+    polygon = Polygon(room_polygon)
+    return polygon.contains(point)
+
 def get_rooms(house):
     rooms = []
     for room in house["rooms"]:
@@ -287,6 +294,27 @@ def euclidean_dist_to_all_targets(all_door_targets, cur_pos):
             dists.append(euclidean_dist(p1, p2))
     return dists
 
+def get_room_perimeter_points(reachable_points, unreachable_points, room_of_placement, na):
+    room_polygon = prep(Polygon(room_of_placement[1]))
+
+    reachable_room_points = {
+        (x, y) for (x, y) in reachable_points if room_polygon.contains(Point(x, y))
+    }
+
+    unreachable_room_points = {
+        (x, y) for (x, y) in unreachable_points if room_polygon.contains(Point(x, y))
+    }
+
+    # Test each reachable point whether it has neighbours that are not reachable
+    boundary_points = set()
+    for rpos in reachable_room_points:
+        for move in na.MOVE_MOVES:
+            new_x, new_y = na.apply(rpos[0], rpos[1], move)
+            if (new_x, new_y) in unreachable_room_points or (new_x, new_y) not in reachable_room_points:
+                boundary_points.add((rpos[0], rpos[1]))
+                break
+    return boundary_points
+
 def main(init_func=None, step_func=None):
     USE_RNC = True
     if USE_RNC:
@@ -347,8 +375,9 @@ def main(init_func=None, step_func=None):
 
     # AE: Required infrastructure for calculating path lengths
     nu = NavigationUtils(step = grid_size)
+    na = NavigationActions(step = grid_size)
     atu = AI2THORUtils()
-    yu = YoloUtils()
+    #yu = YoloUtils()
     #agent = PathCompareClient(jetson_ip="192.168.0.109", port=5555)
     agent = None
     atu.set_controller(controller)
@@ -375,9 +404,9 @@ def main(init_func=None, step_func=None):
     #print("AE, by axes: ", pos_ba)
     full_grid = create_full_grid_from_room_layout(rooms_in_habitat, step=grid_size)
     full_grid = [tuple(map(lambda x: round(x, 2), pos)) for pos in full_grid]
-    unreachable_postions = set(full_grid) - set(reachable_positions)
+    unreachable_positions = set(full_grid) - set(reachable_positions)
     (safe_pos, buf_unreachable_pos) = add_buffer_to_unreachable(set(reachable_positions), set(full_grid), step=grid_size)
-    #print("unreachable_postions: ", unreachable_postions)
+    #print("unreachable_positions: ", unreachable_positions)
     #print("reachable_positions: ", r_positions) #reachable_positions
 
     event = controller.step(
@@ -475,7 +504,7 @@ def main(init_func=None, step_func=None):
 
                 event = controller.step(action="Pass")
 
-                print(yu.extract_detections(event))
+                #print(yu.extract_detections(event))
 
                 if step_func is not None:
                     step_func(event, config)
@@ -576,11 +605,15 @@ def main(init_func=None, step_func=None):
 
             all_visible_doors = nu.get_all_visible_doors(controller)
             print("DOORVIS: ", len(all_visible_doors))
+            print(room_of_placement)
+            boundary_points = get_room_perimeter_points(reachable_positions, unreachable_positions, room_of_placement, na)
 
+            print("B:", boundary_points)
+            print("P:", cur_path)
             # Visualize path and obstructed space
-            #atu.visualise_path2(cur_path, reachable_positions, unreachable_postions, rooms_in_habitat, start, dest,
-            #                    show_unreachable_pos = True,
-            #                    show_reachable_pos = False)
+            atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
+                               show_unreachable_pos = False,
+                               show_reachable_pos = False)
             #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 
 if __name__ == "__main__":

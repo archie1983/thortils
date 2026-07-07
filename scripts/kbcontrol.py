@@ -608,7 +608,7 @@ def get_room_perimeter_points_2nd_pass(boundary_points, na):
         current_sub_boundary.append(cbp)
         neighbours_found = 0
         # now move forward until we see either a visited point or a crossroads (more than 2 valid paths from here)
-        for move in na.MOVE_MOVES: # walk in all directions from current point until we find another point from the boundary or exhaust all moves
+        for move in na.STRAIGHT_MOVE_MOVES: # walk in all directions from current point until we find another point from the boundary or exhaust all moves
             new_x, new_y = na.apply(cbp[0], cbp[1], move)
             # count how many other boundary points we can see from this one
             if (new_x, new_y) in boundary_points and cbp_prev != (new_x, new_y) and not (((new_x, new_y), cbp) in discovered_vectors):
@@ -620,6 +620,7 @@ def get_room_perimeter_points_2nd_pass(boundary_points, na):
                     # if there are more, then store them as directions in crossroads
                     discovered_vectors.append(((new_x, new_y), cbp))
                     crossroads.append((current_sub_boundary.copy(), (new_x, new_y), cbp))
+                    print("len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, "(new_x, new_y): ", (new_x, new_y))
 
 
         # If we have 1 neighbour, then cbp is an end part of an unconnected boundary. We're not interested int this kind of path,
@@ -960,7 +961,7 @@ def main(init_func=None, step_func=None):
             #boundary_points = extract_room_boundary(boundary_points, room_of_placement[1])
 
             #boundary_points = find_largest_boundary(boundary_points)
-            boundary_points = filter_perimeter_by_room(boundary_points, room_of_placement[1])
+            #boundary_points = filter_perimeter_by_room(boundary_points, room_of_placement[1])
 
             #print("B:", boundary_points)
             #print("P:", cur_path)

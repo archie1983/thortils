@@ -595,6 +595,7 @@ def get_room_perimeter_points_2nd_pass(boundary_points, na):
     crossroads = deque() # stack for crossroad points
     cbp = None
     cbp_prev = None
+    cbp_next = None
     discovered_vectors = list()
 
     #cbp = boundary_points.pop() # take any point as a starter
@@ -614,8 +615,7 @@ def get_room_perimeter_points_2nd_pass(boundary_points, na):
                 neighbours_found += 1
                 if neighbours_found == 1:
                     # The first neighbour that we find will be the regular one to explore
-                    cbp_prev = cbp
-                    cbp = (new_x, new_y)
+                    cbp_next = (new_x, new_y)
                 else:
                     # if there are more, then store them as directions in crossroads
                     discovered_vectors.append(((new_x, new_y), cbp))
@@ -629,6 +629,8 @@ def get_room_perimeter_points_2nd_pass(boundary_points, na):
             if len(crossroads) > 0:
                 current_sub_boundary, cbp, cbp_prev = crossroads.pop()
         else:
+            cbp_prev = cbp
+            cbp = cbp_next
             # see if we've found a closure for the current boundary
             if cbp in current_sub_boundary:
                 # if we see cbp already in the current path, then we have completed a loop and current_sub_boundary is a complete sub-boundary

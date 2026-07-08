@@ -509,7 +509,8 @@ def main(init_func=None, step_func=None):
             point_for_room_search = (p[0], "", p[2])
             #print("AE: ", rooms_in_habitat, " :: ", point_for_room_search)
             room_of_placement = room_this_point_belongs_to(rooms_in_habitat, point_for_room_search)
-            # #print("AE: room_of_placement: ", room_of_placement)
+            # print("AE: room_of_placement: ", room_of_placement)
+            # exit()
             # print("AE: rooms_in_habitat: ", rooms_in_habitat)
             # room_centre = room_of_placement[2]
             # try:
@@ -621,12 +622,12 @@ def main(init_func=None, step_func=None):
             #print("B:", boundary_points)
             #print("P:", cur_path)
             # Visualize path and obstructed space
-            # atu.visualise_path2(boundary_points_de_removed, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
-            #                    show_unreachable_pos = False,
-            #                    show_reachable_pos = False)
-            atu.visualise_path2(separated_boundaries[-1], reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
+            atu.visualise_path2(boundary_points_de_removed, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
                                show_unreachable_pos = False,
                                show_reachable_pos = False)
+            # atu.visualise_path2(separated_boundaries[-1], reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
+            #                    show_unreachable_pos = False,
+            #                    show_reachable_pos = False)
             # for sb in separated_boundaries:
             #     atu.visualise_path2(sb, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
             #                        show_unreachable_pos = False,

@@ -394,7 +394,7 @@ class BoundaryCalculations:
         for i in range(len(x_vals_uq)):
             new_col = [bp for bp in boundary_points if bp[0] == x_vals_uq[i]]
             new_col = sorted(new_col, key = lambda x: x[1])
-            print(new_col)
+            #print(new_col)
             boundary_points_2d.append(new_col)
 
         all_removed = []
@@ -402,6 +402,7 @@ class BoundaryCalculations:
         # now if the difference between x values in two neighbouring columns is step (0.125) or thereabouts (due to
         # rounding issues), then look at y-values. if we have two or more y-values matching, then only keep 1,
         # ideally the longest series.
+        removal_candidates = set()
         for i in range(len(x_vals_uq) - 1):
             cur_col = boundary_points_2d[i]
             next_col = boundary_points_2d[i + 1]
@@ -434,6 +435,11 @@ class BoundaryCalculations:
                             #     first_removed = next_col[nc]
                             # last_removed = next_col[nc + 1]
                             #item_removed_in_last_cycle = True
+                            # add the whole square of the candidate points to remove
+                            removal_candidates.add(cur_col[cc])
+                            removal_candidates.add(cur_col[cc + 1])
+                            removal_candidates.add(next_col[nc])
+                            removal_candidates.add(next_col[nc + 1])
                         else:
                             # if first_removed != None:
                             #     print("next_col[nc]: ", next_col[nc], "last_removed: ", last_removed, " all_spared: ", all_spared)
@@ -444,6 +450,12 @@ class BoundaryCalculations:
                             # if not, then keep the existing value
                             new_next_col[nc] = next_col[nc]
 
+                # if first_removed != None:
+                #     print("col complete: ", "last_removed: ", last_removed, " all_spared: ", all_spared)
+                #     all_spared.extend([first_removed])
+                #     all_spared.extend([last_removed])
+                #     first_removed = None
+                #     last_removed = None
                 all_removed.extend(removed_from_next_col)
                 #boundary_points_2d[i + 1] = new_next_col
                 #print("new_next_col: ", new_next_col)
@@ -451,16 +463,19 @@ class BoundaryCalculations:
                 continue
 
         print("All removed: ", all_removed)
-        print("new boundary points: ")
-        for bp in boundary_points_2d:
-            print(bp)
+        print("removal_candidates: ", removal_candidates)
+
+        # print("new boundary points: ")
+        # for bp in boundary_points_2d:
+        #     print(bp)
 
         all_vals = []
         for i in range(len(boundary_points_2d)):
             all_vals.extend(boundary_points_2d[i])
 
         #return set(all_vals)
-        return (boundary_points - set(all_removed)).union(set(all_spared))
+        #return (boundary_points - set(all_removed)).union(set(all_spared))
+        return removal_candidates
 
     def visualize(self, collection_to_visualize, collection_to_visualize2 = None):
         # Plot the room boundary and internal obstacles
@@ -491,6 +506,67 @@ class BoundaryCalculations:
         plt.title('Room Boundary vs Internal Obstacle Perimeters')
         plt.show()
 
+    def find_rectangles(self, removal_candidates, step=0.125):
+        x_vals = [p[0] for p in removal_candidates]
+        x_vals_uq = list(set(x_vals))
+        x_vals_uq = sorted(x_vals_uq, key=lambda x: x)
+        points_2d = []
+        all_v_rects = set()  # vertical rectangles
+        all_mid_vertices = set()
+
+        # stack all points by their x-value, e.g.:
+        #_______0______________1______________2______
+        # (5.25, 6.88) | (5.37, 3.50) | (5.88, 3.50)
+        # (5.25, 6.75) | (5.37, 3.62) | (5.88, 3.62)
+        # (5.25, 6.62) |              | (5.88, 3.75)
+        #
+        for i in range(len(x_vals_uq)):
+            new_col = [bp for bp in removal_candidates if bp[0] == x_vals_uq[i]]
+            new_col = sorted(new_col, key = lambda x: x[1])
+            #print(new_col)
+            points_2d.append(new_col)
+        #print("points_2d: ", points_2d)
+
+        # find vertical rectangles
+        for i in range(len(x_vals_uq) - 1):
+            cur_col = points_2d[i]
+            next_col = points_2d[i + 1]
+
+            # if two columns are x-neighbours, then inspect their y-values
+            if len(cur_col) > 0 and len(next_col) > 0 and next_col[0][0] - cur_col[0][0] < 1.5 * step:
+                for cc in range(len(cur_col) - 1):
+                    rect_start = None
+                    rect_end = None
+                    for nc in range (len(next_col) - 1):
+                        if (cur_col[cc][1] == next_col[nc][1] and # if y coordinates are the same in current and next column
+                            cur_col[cc + 1][1] == next_col[nc + 1][1] and # and next y coordinates are also the same
+                            cur_col[cc + 1][1] - cur_col[cc][1] < 1.5 * step): # and the difference is within a step, then it is forming a square
+                            # we found a square with these vertices: cur_col[cc], next_col[nc], cur_col[cc + 1], next_col[nc + 1]
+                            # let's keep going to see if this continues into a rectangle.
+                            rect_start = (cur_col[cc], next_col[nc])
+                            rect_step_count = 1 # so far we have two pairs of points (two steps in the potential rectangle), which at this point is a square, but we have registered only one (rect_start)
+                            while (cc + rect_step_count < len(cur_col) and # while we haven't run out of current column
+                                   nc + rect_step_count < len(next_col) and # and haven't run out of next column
+                                   cur_col[cc + rect_step_count][1] == next_col[nc + rect_step_count][1] and # and the next pair down still forms further part of this rectangle
+                                   cur_col[cc + rect_step_count][1] - cur_col[cc + rect_step_count - 1][1] < 1.5 * step): # and the difference between this and next pair is within a step
+                                rect_end = (cur_col[cc + rect_step_count], next_col[nc + rect_step_count])
+                                all_mid_vertices.add(cur_col[cc + rect_step_count])
+                                all_mid_vertices.add(next_col[nc + rect_step_count])
+                                print("detected: ", cur_col[cc + rect_step_count], next_col[nc + rect_step_count])
+                                rect_step_count += 1
+                            if rect_step_count > 2: # if we have discovered anything bigger than a square
+                                if rect_start[0] not in all_mid_vertices: # if this start has not already been seen much earlier as a mid section of a different rectangle, then add it
+                                    all_v_rects.add(rect_start[0])
+                                    all_v_rects.add(rect_start[1])
+                                all_v_rects.add(rect_end[0])
+                                all_v_rects.add(rect_end[1])
+                                all_mid_vertices.discard(rect_end[0])
+                                all_mid_vertices.discard(rect_end[1])
+                            print("all_mid_vertices: ", all_mid_vertices)
+
+        print("all_v_rects: ", all_v_rects)
+        return all_v_rects
+
 if __name__ == "__main__":
     bc = BoundaryCalculations()
     # living room with dogbed and table
@@ -504,11 +580,21 @@ if __name__ == "__main__":
                                                            room_of_placement, bc.na)
 
     bc.visualize(boundary_points)
-    de_b = bc.filter_double_boundaries(boundary_points)
-    bc.visualize(de_b)
-    separated_boundaries = bc.get_room_perimeter_points_2nd_pass(de_b, bc.na)
+    removal_candidates = bc.filter_double_boundaries(boundary_points)
+    #bc.visualize(de_b)
+    rects = bc.find_rectangles(removal_candidates)
+    removal_candidates = removal_candidates - rects
+
+    boundary_points = boundary_points - removal_candidates
+
+    separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
     print("boundary count: ", len(separated_boundaries))
     print("separated_boundaries[-1]: ", separated_boundaries[-1])
+
+    #removal_candidates = {(6.25, 3.12), (5.5, 0.38), (5.88, 3.25), (6.0, 3.12), (5.62, 0.38), (5.5, 0.5), (5.5, 0.25), (5.5, 0.62), (6.25, 3.25), (6.12, 3.12), (5.62, 0.25), (5.62, 0.62), (6.0, 3.25), (5.88, 3.12), (6.12, 3.25), (5.62, 0.5)}
+    bc.find_rectangles(removal_candidates)
+    bc.visualize(boundary_points)
+
     #bc.visualize(separated_boundaries[-1])
     # for b in separated_boundaries:
     #     bc.visualize(b)

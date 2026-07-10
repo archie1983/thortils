@@ -313,69 +313,77 @@ class BoundaryCalculations:
         discovered_vectors = list()
         seen_4_cross = False
 
+        # when we visit vertices and build our paths, we may discover disconnected graphs, where a path can be formed,
+        # but it only visits a subset of vertices. If that is the case, then we want to re-run the algorithm and choose
+        # the starting point from the un-visited vertices. For that we will need to track the visisted vertices.
+        visited_points = set()
+
         #cbp = boundary_points.pop() # take any point as a starter
         # cbp is "current boundary point"
-        for cbp in boundary_points:
-            break
+        while boundary_points != visited_points:
+            points_to_choose_from = boundary_points - visited_points
+            for cbp in points_to_choose_from:
+                break
 
-        while cbp:
-            # add current point to the current boundary
-            current_sub_boundary.append(cbp)
-            neighbours_found = 0
-            # now move forward until we see either a visited point or a crossroads (more than 2 valid paths from here)
-            for move in na.MOVE_MOVES: # walk in all directions from current point until we find another point from the boundary or exhaust all moves
-                new_x, new_y = na.apply(cbp[0], cbp[1], move)
-                # count how many other boundary points we can see from this one
-                if (new_x, new_y) in boundary_points and cbp_prev != (new_x, new_y) and not (((new_x, new_y), cbp) in discovered_vectors):
-                    neighbours_found += 1
-                    if neighbours_found == 1:
-                        # The first neighbour that we find will be the regular one to explore
-                        cbp_next = (new_x, new_y)
-                    else:
-                        # if there are more, then store them as directions in crossroads
-                        discovered_vectors.append(((new_x, new_y), cbp))
-                        crossroads.append(((new_x, new_y), cbp, current_sub_boundary.copy(), discovered_vectors))
-                        print("len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, "(new_x, new_y): ", (new_x, new_y))
+            while cbp:
+                # add current point to the current boundary
+                current_sub_boundary.append(cbp)
+                visited_points.add(cbp)
+                neighbours_found = 0
+                # now move forward until we see either a visited point or a crossroads (more than 2 valid paths from here)
+                for move in na.MOVE_MOVES: # walk in all directions from current point until we find another point from the boundary or exhaust all moves
+                    new_x, new_y = na.apply(cbp[0], cbp[1], move)
+                    # count how many other boundary points we can see from this one
+                    if (new_x, new_y) in boundary_points and cbp_prev != (new_x, new_y) and not (((new_x, new_y), cbp) in discovered_vectors):
+                        neighbours_found += 1
+                        if neighbours_found == 1:
+                            # The first neighbour that we find will be the regular one to explore
+                            cbp_next = (new_x, new_y)
+                        else:
+                            # if there are more, then store them as directions in crossroads
+                            discovered_vectors.append(((new_x, new_y), cbp))
+                            crossroads.append(((new_x, new_y), cbp, current_sub_boundary.copy(), discovered_vectors))
+                            print("len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, "(new_x, new_y): ", (new_x, new_y))
 
 
-            # If we have 1 neighbour, then cbp is an end part of an unconnected boundary. We're not interested int this kind of path,
-            # purge it.
-            if neighbours_found < 1:
-                print("TEST current_sub_boundary: ", current_sub_boundary, "cbp: ", cbp, "cbp_prev: ", cbp_prev, "cbp_next: ", cbp_next)
-                cbp = None
-                if len(crossroads) > 0:
-                    cbp, cbp_prev, current_sub_boundary, discovered_vectors = crossroads.pop()
-            else:
-                if neighbours_found >= 3:
-                    print("neighbours_found: ", neighbours_found, "len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, " cbp_next: ", cbp_next)
-                    #print("crossroads: ", crossroads)
-
-                    for cr in [crossroads[i] for i in range(-2, 0)]:
-                        print("3neighbour cr: ", cr)
-                    seen_4_cross = True
-                    #breakpoint()
-                if neighbours_found == 2 and seen_4_cross:
-                    #breakpoint()
-                    pass
-                cbp_prev = cbp
-                cbp = cbp_next
-                # see if we've found a closure for the current boundary
-                if cbp in current_sub_boundary:
-                    # if we see cbp already in the current path, then we have completed a loop and current_sub_boundary is a complete sub-boundary
-                    cbp_ndx = current_sub_boundary.index(cbp)
-                    current_sub_boundary = current_sub_boundary[cbp_ndx:]
-                    all_sub_boundaries.append(current_sub_boundary)
-
-                    # if there are more crossroads left, then explore those
+                # If we have 1 neighbour, then cbp is an end part of an unconnected boundary. We're not interested int this kind of path,
+                # purge it.
+                if neighbours_found < 1:
+                    print("TEST current_sub_boundary: ", current_sub_boundary, "cbp: ", cbp, "cbp_prev: ", cbp_prev, "cbp_next: ", cbp_next)
                     cbp = None
                     if len(crossroads) > 0:
                         cbp, cbp_prev, current_sub_boundary, discovered_vectors = crossroads.pop()
+                else:
+                    if neighbours_found >= 3:
+                        print("neighbours_found: ", neighbours_found, "len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, " cbp_next: ", cbp_next)
+                        #print("crossroads: ", crossroads)
 
-        all_sub_boundaries = [sb for sb in all_sub_boundaries if len(sb) > 2]
-        all_sub_boundaries = sorted(all_sub_boundaries, key=lambda boundary: Polygon(boundary).area)
-        # for sb in all_sub_boundaries:
-        #     print("SB: ", sb)
-        #print("len(crossroads) at END: ", len(crossroads))
+                        for cr in [crossroads[i] for i in range(-2, 0)]:
+                            print("3neighbour cr: ", cr)
+                        seen_4_cross = True
+                        #breakpoint()
+                    if neighbours_found == 2 and seen_4_cross:
+                        #breakpoint()
+                        pass
+                    cbp_prev = cbp
+                    cbp = cbp_next
+                    # see if we've found a closure for the current boundary
+                    if cbp in current_sub_boundary:
+                        # if we see cbp already in the current path, then we have completed a loop and current_sub_boundary is a complete sub-boundary
+                        cbp_ndx = current_sub_boundary.index(cbp)
+                        current_sub_boundary = current_sub_boundary[cbp_ndx:]
+                        all_sub_boundaries.append(current_sub_boundary)
+
+                        # if there are more crossroads left, then explore those
+                        cbp = None
+                        if len(crossroads) > 0:
+                            cbp, cbp_prev, current_sub_boundary, discovered_vectors = crossroads.pop()
+
+            all_sub_boundaries = [sb for sb in all_sub_boundaries if len(sb) > 2]
+            all_sub_boundaries = sorted(all_sub_boundaries, key=lambda boundary: Polygon(boundary).area)
+            # for sb in all_sub_boundaries:
+            #     print("SB: ", sb)
+            #print("len(crossroads) at END: ", len(crossroads))
         return all_sub_boundaries
 
     def filter_double_boundaries(self, boundary_points, step=0.125):
@@ -430,7 +438,7 @@ class BoundaryCalculations:
                             removed_from_next_col.append(next_col[nc + 1])
                             #new_next_col[nc] = (-1, -1)
                             #new_next_col[nc + 1] = (-1, -1)
-                            print("Removed ", next_col[nc])
+                            #print("Removed ", next_col[nc])
                             # if first_removed == None:
                             #     first_removed = next_col[nc]
                             # last_removed = next_col[nc + 1]
@@ -552,6 +560,67 @@ class BoundaryCalculations:
                                 rect_end = (cur_col[cc + rect_step_count], next_col[nc + rect_step_count])
                                 all_mid_vertices.add(cur_col[cc + rect_step_count])
                                 all_mid_vertices.add(next_col[nc + rect_step_count])
+                                #print("detected: ", cur_col[cc + rect_step_count], next_col[nc + rect_step_count])
+                                rect_step_count += 1
+                            if rect_step_count > 2: # if we have discovered anything bigger than a square
+                                if rect_start[0] not in all_mid_vertices: # if this start has not already been seen much earlier as a mid section of a different rectangle, then add it
+                                    all_v_rects.add(rect_start[0])
+                                    all_v_rects.add(rect_start[1])
+                                all_v_rects.add(rect_end[0])
+                                all_v_rects.add(rect_end[1])
+                                all_mid_vertices.discard(rect_end[0])
+                                all_mid_vertices.discard(rect_end[1])
+                            #print("all_mid_vertices: ", all_mid_vertices)
+
+        #print("all_v_rects: ", all_v_rects)
+        return all_v_rects
+
+    def find_horizontal_rectangles(self, removal_candidates, step=0.125):
+        x_vals = [p[0] for p in removal_candidates]
+        x_vals_uq = list(set(x_vals))
+        x_vals_uq = sorted(x_vals_uq, key=lambda x: x)
+        points_2d = []
+        all_v_rects = set()  # vertical rectangles
+        all_mid_vertices = set()
+
+        # stack all points by their x-value, e.g.:
+        #_______0______________1______________2______
+        # (5.25, 6.88) | (5.37, 3.50) | (5.88, 3.50)
+        # (5.25, 6.75) | (5.37, 3.62) | (5.88, 3.62)
+        # (5.25, 6.62) |              | (5.88, 3.75)
+        #
+        for i in range(len(x_vals_uq)):
+            new_col = [bp for bp in removal_candidates if bp[0] == x_vals_uq[i]]
+            new_col = sorted(new_col, key = lambda x: x[1])
+            #print(new_col)
+            points_2d.append(new_col)
+        #print("points_2d: ", points_2d)
+
+        # find vertical rectangles
+        for i in range(len(x_vals_uq) - 1):
+            cur_col = points_2d[i]
+            next_col = points_2d[i + 1]
+
+            # if two columns are x-neighbours, then inspect their y-values
+            if len(cur_col) > 0 and len(next_col) > 0 and next_col[0][0] - cur_col[0][0] < 1.5 * step:
+                for cc in range(len(cur_col) - 1):
+                    rect_start = None
+                    rect_end = None
+                    for nc in range (len(next_col) - 1):
+                        if (cur_col[cc][1] == next_col[nc][1] and # if y coordinates are the same in current and next column
+                            cur_col[cc + 1][1] == next_col[nc + 1][1] and # and next y coordinates are also the same
+                            cur_col[cc + 1][1] - cur_col[cc][1] < 1.5 * step): # and the difference is within a step, then it is forming a square
+                            # we found a square with these vertices: cur_col[cc], next_col[nc], cur_col[cc + 1], next_col[nc + 1]
+                            # let's keep going to see if this continues into a rectangle.
+                            rect_start = (cur_col[cc], next_col[nc])
+                            rect_step_count = 1 # so far we have two pairs of points (two steps in the potential rectangle), which at this point is a square, but we have registered only one (rect_start)
+                            while (cc + rect_step_count < len(cur_col) and # while we haven't run out of current column
+                                   nc + rect_step_count < len(next_col) and # and haven't run out of next column
+                                   cur_col[cc + rect_step_count][1] == next_col[nc + rect_step_count][1] and # and the next pair down still forms further part of this rectangle
+                                   cur_col[cc + rect_step_count][1] - cur_col[cc + rect_step_count - 1][1] < 1.5 * step): # and the difference between this and next pair is within a step
+                                rect_end = (cur_col[cc + rect_step_count], next_col[nc + rect_step_count])
+                                all_mid_vertices.add(cur_col[cc + rect_step_count])
+                                all_mid_vertices.add(next_col[nc + rect_step_count])
                                 print("detected: ", cur_col[cc + rect_step_count], next_col[nc + rect_step_count])
                                 rect_step_count += 1
                             if rect_step_count > 2: # if we have discovered anything bigger than a square
@@ -581,9 +650,14 @@ if __name__ == "__main__":
 
     bc.visualize(boundary_points)
     removal_candidates = bc.filter_double_boundaries(boundary_points)
+    removal_candidates_90_deg = {(el[1], el[0]) for el in removal_candidates}
+
     #bc.visualize(de_b)
-    rects = bc.find_rectangles(removal_candidates)
-    removal_candidates = removal_candidates - rects
+    rects_vert = bc.find_rectangles(removal_candidates)
+    rects_horiz = bc.find_rectangles(removal_candidates_90_deg)
+    rects_horiz = {(el[1], el[0]) for el in rects_horiz}
+
+    removal_candidates = removal_candidates - rects_vert - rects_horiz
 
     boundary_points = boundary_points - removal_candidates
 
@@ -592,9 +666,10 @@ if __name__ == "__main__":
     print("separated_boundaries[-1]: ", separated_boundaries[-1])
 
     #removal_candidates = {(6.25, 3.12), (5.5, 0.38), (5.88, 3.25), (6.0, 3.12), (5.62, 0.38), (5.5, 0.5), (5.5, 0.25), (5.5, 0.62), (6.25, 3.25), (6.12, 3.12), (5.62, 0.25), (5.62, 0.62), (6.0, 3.25), (5.88, 3.12), (6.12, 3.25), (5.62, 0.5)}
-    bc.find_rectangles(removal_candidates)
     bc.visualize(boundary_points)
 
-    #bc.visualize(separated_boundaries[-1])
+    bc.visualize(separated_boundaries[-1])
     # for b in separated_boundaries:
     #     bc.visualize(b)
+
+    print("rects_horiz: ", rects_horiz)

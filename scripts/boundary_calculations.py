@@ -1,4 +1,4 @@
-import json, math
+import json, math, itertools
 
 from shapely.ops import unary_union
 from shapely.geometry import Point
@@ -8,6 +8,8 @@ from scipy.spatial import KDTree
 from collections import deque
 import matplotlib.pyplot as plt
 from ai2_thor_model_training.ae_utils import NavigationActions
+
+import numpy as np
 
 class BoundaryCalculations:
     def __init__(self, grid_size=0.125):
@@ -312,11 +314,12 @@ class BoundaryCalculations:
         crossroads = deque() # stack for crossroad points
         cbp = None
         cbp_prev = None
+        cbp_prev_prev = None
         cbp_next = None
-        discovered_vectors = list()
         # all the decisions in all the crossroads that have been made so far. The basic unit will consist of the actual
         # crossroad point and the direction taken. And a chain of such basic units is what we need to keep track of.
         crossroad_decision_chains_explored = list()
+        current_decision_chain = list()
         seen_4_cross = False
 
         # when we visit vertices and build our paths, we may discover disconnected graphs, where a path can be formed,
@@ -332,6 +335,7 @@ class BoundaryCalculations:
                 break
 
             while cbp:
+                #breakpoint()
                 # add current point to the current boundary
                 current_sub_boundary.append(cbp)
                 visited_points.add(cbp)
@@ -340,17 +344,22 @@ class BoundaryCalculations:
                 for move in na.MOVE_MOVES: # walk in all directions from current point until we find another point from the boundary or exhaust all moves
                     new_x, new_y = na.apply(cbp[0], cbp[1], move)
                     # count how many other boundary points we can see from this one
-                    if ((new_x, new_y) in boundary_points and
-                            cbp_prev != (new_x, new_y) and
-                            not discovered_vectors + [((new_x, new_y), cbp)] in crossroad_decision_chains_explored):
+                    if ((new_x, new_y) in boundary_points and # only proceed if the point is whithin accessible points
+                        cbp_prev != (new_x, new_y) and # and we're not going backwards
+                        cbp_prev_prev != (new_x, new_y) and # to avoid triangular paths around every 90 degree corner
+                        not any([current_decision_chain + [((new_x, new_y), cbp)] in v for v in crossroad_decision_chains_explored])): # and we haven't seen this kind of path before (to avoid cyclic travelling)
                         neighbours_found += 1
                         if neighbours_found == 1:
                             # The first neighbour that we find will be the regular one to explore
                             cbp_next = (new_x, new_y)
                         else:
                             # if there are more, then store them as directions in crossroads
-                            discovered_vectors.append(((new_x, new_y), cbp))
-                            crossroads.append(((new_x, new_y), cbp, current_sub_boundary.copy(), discovered_vectors.copy()))
+                            #print(((new_x, new_y), cbp), (((new_x, new_y), cbp) in discovered_vectors), len(discovered_vectors))
+                            #print(discovered_vectors | {((new_x, new_y), cbp)})
+                            #print(len(crossroad_decision_chains_explored))
+                            #print(crossroad_decision_chains_explored)
+                            crossroads.append(((new_x, new_y), cbp, cbp_prev, current_sub_boundary.copy(), current_decision_chain.copy()))
+
                             #print("len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, "(new_x, new_y): ", (new_x, new_y))
 
 
@@ -358,14 +367,15 @@ class BoundaryCalculations:
                 # purge it.
                 if neighbours_found < 1:
                     #print("TEST current_sub_boundary: ", current_sub_boundary, "cbp: ", cbp, "cbp_prev: ", cbp_prev, "cbp_next: ", cbp_next)
+                    #breakpoint()
                     cbp = None
                     if len(crossroads) > 0:
-                        cbp, cbp_prev, current_sub_boundary, discovered_vectors = crossroads.pop()
-                        crossroad_decision_chains_explored.append(discovered_vectors)
+                        cbp, cbp_prev, cbp_prev_prev, current_sub_boundary, current_decision_chain = crossroads.pop()
+                        #crossroad_decision_chains_explored.append(discovered_vectors)
                 else:
                     if neighbours_found >= 3:
-                        print("neighbours_found: ", neighbours_found, "len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, " cbp_next: ", cbp_next)
-                        print("len(crossroad_decision_chains_explored): ", len(crossroad_decision_chains_explored))
+                        # print("neighbours_found: ", neighbours_found, "len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, " cbp_next: ", cbp_next)
+                        # print("len(crossroad_decision_chains_explored): ", len(crossroad_decision_chains_explored))
                         #print("set(crossroad_decision_chains_explored): ", set(crossroad_decision_chains_explored))
 
                         # for cr in [crossroads[i] for i in range(-2, 0)]:
@@ -375,20 +385,31 @@ class BoundaryCalculations:
                     if neighbours_found == 2 and seen_4_cross:
                         #breakpoint()
                         pass
+
+                    # if there was a crossroad, then remember also the path that we're taking now as a branch
+                    # of that crossroad that has been explored.
+                    if neighbours_found > 1:
+                        current_decision_chain.append((cbp_next, cbp))
+
+                    cbp_prev_prev = cbp_prev
                     cbp_prev = cbp
                     cbp = cbp_next
                     # see if we've found a closure for the current boundary
                     if cbp in current_sub_boundary:
+                        #breakpoint()
                         # if we see cbp already in the current path, then we have completed a loop and current_sub_boundary is a complete sub-boundary
                         cbp_ndx = current_sub_boundary.index(cbp)
                         current_sub_boundary = current_sub_boundary[cbp_ndx:]
                         all_sub_boundaries.append(current_sub_boundary)
 
+                        # remember a decision chain that we have already explored
+                        crossroad_decision_chains_explored.append(current_decision_chain.copy())
+
                         # if there are more crossroads left, then explore those
                         cbp = None
                         if len(crossroads) > 0:
-                            cbp, cbp_prev, current_sub_boundary, discovered_vectors = crossroads.pop()
-                            crossroad_decision_chains_explored.append(discovered_vectors)
+                            cbp, cbp_prev, cbp_prev_prev, current_sub_boundary, current_decision_chain = crossroads.pop()
+                            #crossroad_decision_chains_explored.append(discovered_vectors)
 
             all_sub_boundaries = [sb for sb in all_sub_boundaries if len(sb) > 2]
             all_sub_boundaries = sorted(all_sub_boundaries, key=lambda boundary: Polygon(boundary).area)
@@ -753,8 +774,45 @@ class BoundaryCalculations:
             p2 = (p2[0], p2[2])
         return math.sqrt(sum([(a - b)** 2 for a, b in zip(p1, p2)]))
 
+    def create_grid_points_product(self, min_x, max_x, min_y, max_y, step=0.125):
+        """
+        Create grid points using itertools.product for cleaner code.
+        """
+        x_values = np.arange(min_x, max_x + step / 2, step)  # Add small epsilon for floating point
+        y_values = np.arange(min_y, max_y + step / 2, step)
+
+        points = set()
+        for x, y in itertools.product(x_values, y_values):
+            points.add((round(x, 2), round(y, 2)))
+
+        points = {(float(p[0]), float(p[1])) for p in points}
+        return points
+
+
 if __name__ == "__main__":
     bc = BoundaryCalculations()
+
+    reachable_positions = bc.create_grid_points_product(0.25, 1.0, 0.25, 1.0)
+    unreachable_positions = bc.create_grid_points_product(0.0, 1.25, 0.0, 1.25)
+    unreachable_positions = unreachable_positions - reachable_positions
+    # print(reachable_positions)
+    # print(unreachable_positions)
+    room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.0), (1.0, 1.0), (1.00, 0.25)], Point(0.5, 0.5))
+
+    boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
+
+    print("boundary_points")
+    bc.visualize(boundary_points) #1
+
+    separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
+    print("boundary count: ", len(separated_boundaries))
+    #bc.visualize(separated_boundaries[-1])
+    for b in separated_boundaries:
+        bc.visualize(b)
+
+    exit()
+
+
 
     with open("/home/hp20024/robotics/latent_planning/procthor-10k/house1.jsonl", "r") as f:
         house = json.load(f)

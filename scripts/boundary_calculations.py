@@ -400,7 +400,11 @@ class BoundaryCalculations:
                         # if we see cbp already in the current path, then we have completed a loop and current_sub_boundary is a complete sub-boundary
                         cbp_ndx = current_sub_boundary.index(cbp)
                         current_sub_boundary = current_sub_boundary[cbp_ndx:]
-                        all_sub_boundaries.append(current_sub_boundary)
+                        # only add it to the all_sub_boundaries if it is a unique boundary. We are not interested
+                        # in boundaries that have different start end end points, but contain the same points
+                        s_all_sub_boundaries = set(current_sub_boundary)
+                        if all(s_all_sub_boundaries != set(sb) for sb in all_sub_boundaries):
+                            all_sub_boundaries.append(current_sub_boundary)
 
                         # remember a decision chain that we have already explored
                         crossroad_decision_chains_explored.append(current_decision_chain.copy())
@@ -792,25 +796,25 @@ class BoundaryCalculations:
 if __name__ == "__main__":
     bc = BoundaryCalculations()
 
-    reachable_positions = bc.create_grid_points_product(0.25, 1.0, 0.25, 1.0)
-    unreachable_positions = bc.create_grid_points_product(0.0, 1.25, 0.0, 1.25)
-    unreachable_positions = unreachable_positions - reachable_positions
-    # print(reachable_positions)
-    # print(unreachable_positions)
-    room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.0), (1.0, 1.0), (1.00, 0.25)], Point(0.5, 0.5))
-
-    boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
-
-    print("boundary_points")
-    bc.visualize(boundary_points) #1
-
-    separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
-    print("boundary count: ", len(separated_boundaries))
-    #bc.visualize(separated_boundaries[-1])
-    for b in separated_boundaries:
-        bc.visualize(b)
-
-    exit()
+    # reachable_positions = bc.create_grid_points_product(0.25, 1.0, 0.25, 1.0)
+    # unreachable_positions = bc.create_grid_points_product(0.0, 1.25, 0.0, 1.25)
+    # unreachable_positions = unreachable_positions - reachable_positions
+    # # print(reachable_positions)
+    # # print(unreachable_positions)
+    # room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.0), (1.0, 1.0), (1.00, 0.25)], Point(0.5, 0.5))
+    #
+    # boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
+    #
+    # print("boundary_points")
+    # bc.visualize(boundary_points) #1
+    #
+    # separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
+    # print("boundary count: ", len(separated_boundaries))
+    # #bc.visualize(separated_boundaries[-1])
+    # for b in separated_boundaries:
+    #     bc.visualize(b)
+    #
+    # exit()
 
 
 

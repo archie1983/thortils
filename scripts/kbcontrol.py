@@ -8,7 +8,7 @@ import time, cv2, os
 #from ai2thor.controller import Controller
 #from yolo_utils import YoloUtils
 
-import prior
+import prior, json
 
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
@@ -331,6 +331,8 @@ def main(init_func=None, step_func=None):
     args.scene = house
 
     rooms = get_rooms(house)
+    with open("house1.jsonl", "w") as f:
+        json.dump(house, f, ensure_ascii=False, indent=4)
 
     #controller = thortils.launch_controller({**constants.CONFIG, **{"scene": args.scene}})
     # GRID_SIZE can be e.g. 0.25, 0.125, 0.1, 0.3. But if we have 0.2 or 0.15, then AI2-Thor returns
@@ -605,24 +607,16 @@ def main(init_func=None, step_func=None):
             # print("unreachable_room_points: ", unreachable_room_points)
             # exit()
 
-            boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, na)
-            # print("B:", boundary_points)
+            print("reachable_positions: ", reachable_positions)
+            print("unreachable_positions: ", unreachable_positions)
+            exit()
+
+            # print("room_of_placement: ", room_of_placement)
             # exit()
-            boundary_points_de_removed = bc.filter_double_boundaries(boundary_points)
-            separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points_de_removed, na)
-            outer_boundary = bc.find_outermost_boundary(separated_boundaries)
-            print("Boundary count: ", len(separated_boundaries))
+            boundary_points = bc.find_room_perimeter_path(reachable_positions, unreachable_positions, room_of_placement)
 
-            room_polygon = prep(Polygon(room_of_placement[1]))
-            #boundary_points = extract_room_boundary(boundary_points, room_of_placement[1])
-
-            #boundary_points = find_largest_boundary(boundary_points)
-            #boundary_points = filter_perimeter_by_room(boundary_points, room_of_placement[1])
-
-            #print("B:", boundary_points)
-            #print("P:", cur_path)
             # Visualize path and obstructed space
-            atu.visualise_path2(boundary_points_de_removed, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
+            atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
                                show_unreachable_pos = False,
                                show_reachable_pos = False)
             # atu.visualise_path2(separated_boundaries[-1], reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,

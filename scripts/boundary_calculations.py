@@ -314,6 +314,9 @@ class BoundaryCalculations:
         cbp_prev = None
         cbp_next = None
         discovered_vectors = list()
+        # all the decisions in all the crossroads that have been made so far. The basic unit will consist of the actual
+        # crossroad point and the direction taken. And a chain of such basic units is what we need to keep track of.
+        crossroad_decision_chains_explored = list()
         seen_4_cross = False
 
         # when we visit vertices and build our paths, we may discover disconnected graphs, where a path can be formed,
@@ -337,7 +340,9 @@ class BoundaryCalculations:
                 for move in na.MOVE_MOVES: # walk in all directions from current point until we find another point from the boundary or exhaust all moves
                     new_x, new_y = na.apply(cbp[0], cbp[1], move)
                     # count how many other boundary points we can see from this one
-                    if (new_x, new_y) in boundary_points and cbp_prev != (new_x, new_y) and not (((new_x, new_y), cbp) in discovered_vectors):
+                    if ((new_x, new_y) in boundary_points and
+                            cbp_prev != (new_x, new_y) and
+                            not discovered_vectors + [((new_x, new_y), cbp)] in crossroad_decision_chains_explored):
                         neighbours_found += 1
                         if neighbours_found == 1:
                             # The first neighbour that we find will be the regular one to explore
@@ -345,7 +350,7 @@ class BoundaryCalculations:
                         else:
                             # if there are more, then store them as directions in crossroads
                             discovered_vectors.append(((new_x, new_y), cbp))
-                            crossroads.append(((new_x, new_y), cbp, current_sub_boundary.copy(), discovered_vectors))
+                            crossroads.append(((new_x, new_y), cbp, current_sub_boundary.copy(), discovered_vectors.copy()))
                             #print("len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, "(new_x, new_y): ", (new_x, new_y))
 
 
@@ -356,10 +361,12 @@ class BoundaryCalculations:
                     cbp = None
                     if len(crossroads) > 0:
                         cbp, cbp_prev, current_sub_boundary, discovered_vectors = crossroads.pop()
+                        crossroad_decision_chains_explored.append(discovered_vectors)
                 else:
                     if neighbours_found >= 3:
                         print("neighbours_found: ", neighbours_found, "len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, " cbp_next: ", cbp_next)
-                        #print("crossroads: ", crossroads)
+                        print("len(crossroad_decision_chains_explored): ", len(crossroad_decision_chains_explored))
+                        #print("set(crossroad_decision_chains_explored): ", set(crossroad_decision_chains_explored))
 
                         # for cr in [crossroads[i] for i in range(-2, 0)]:
                         #     print("3neighbour cr: ", cr)
@@ -381,6 +388,7 @@ class BoundaryCalculations:
                         cbp = None
                         if len(crossroads) > 0:
                             cbp, cbp_prev, current_sub_boundary, discovered_vectors = crossroads.pop()
+                            crossroad_decision_chains_explored.append(discovered_vectors)
 
             all_sub_boundaries = [sb for sb in all_sub_boundaries if len(sb) > 2]
             all_sub_boundaries = sorted(all_sub_boundaries, key=lambda boundary: Polygon(boundary).area)

@@ -49,107 +49,6 @@ class BoundaryCalculations:
                     break
         return boundary_points
 
-
-    def get_room_perimeter_points_2nd_pass_ds(self, boundary_points, na):
-        '''
-        Second pass for room boundary points. Extracts connected components
-        from the boundary points set.
-        '''
-        all_sub_boundaries = set()
-
-        # Work with a copy since we'll be modifying it
-        remaining_points = set(boundary_points)
-
-        while remaining_points:
-            # Start a new sub-boundary with any remaining point
-            start_point = remaining_points.pop()
-            current_sub_boundary = set([start_point])  # Use set for easy membership testing
-            changed = True
-
-            # Keep adding points until no new points are found
-            while changed:
-                changed = False
-
-                # For each point in the current boundary
-                for cbp in list(current_sub_boundary):  # Iterate over copy
-                    # Check all four directions
-                    for move in na.MOVE_MOVES:
-                        new_x, new_y = na.apply(cbp[0], cbp[1], move)
-
-                        # If this neighbor is in remaining_points, add it
-                        if (new_x, new_y) in remaining_points:
-                            remaining_points.remove((new_x, new_y))
-                            current_sub_boundary.add((new_x, new_y))
-                            changed = True
-                        # Also check if it's in the current boundary but not yet processed
-                        elif (new_x, new_y) in current_sub_boundary:
-                            continue  # Already in our boundary
-                        # Otherwise, it's not a boundary point or doesn't exist
-
-            # Store as frozenset (hashable) instead of list
-            all_sub_boundaries.add(frozenset(current_sub_boundary))
-        return all_sub_boundaries
-
-        # # Now find which sub-boundary is the room boundary (outermost)
-        # # You can use your polygon logic here
-        # room_boundary = find_outermost_boundary(all_sub_boundaries)
-        #
-        # return room_boundary
-
-    def get_room_perimeter_points_2nd_pass_orig(self, boundary_points, na):
-        '''
-        Second pass for room boundary points. The idea is that we take any point in the boundary points from
-        get_room_perimeter_points_1st_pass(...) and start walking in all directions. If we reach another point
-        from the original boundary points set, then it's the point that belongs to the same boundary, so take it
-        out from the starting set and keep going. Once there are no points left to reach, we have established one
-        boundary. Now take any point from the remaining set and repeat the same procedure. In the end we should
-        have a set of boundaries within the room. Now we form a polygon from each of those sets and check which
-        one is within another one. The outer polygon is what we want.
-
-        :param boundary_points:
-        :param na:
-        :return:
-        '''
-
-        boundary_points = boundary_points.copy()
-        all_sub_boundaries = list()
-        current_sub_boundary = set()
-        neighbour_found = False
-
-        cbp = boundary_points.pop() # take any point as a starter
-        #bounary_points = list(boundary_points)
-        #cbp = bounary_points[0]
-        while len(boundary_points) > 0:
-            current_sub_boundary.add(cbp) # add the current point to the sub-boundary we're processing
-            neighbour_found = False
-            for move in na.MOVE_MOVES: # walk in all directions from current point until we find another point from the boundary or exhaust all moves
-                new_x, new_y = na.apply(cbp[0], cbp[1], move)
-                # if a boundary point found, then remove it from the big boundary set and use it as the new current point.
-                # We will add it to the current sub-boundary on next iteration of outer loop.
-                if (new_x, new_y) in boundary_points:
-                    boundary_points.remove((new_x, new_y))
-                    #print("Removed: ", (new_x, new_y))
-                    cbp = (new_x, new_y)
-                    neighbour_found = True
-                    break
-            if not neighbour_found:
-                # if we went through all moves and didn't find a new point that belongs to a boundary, then we
-                # have finished traversing this sub-boundary
-                #print("Closed boundary: ", current_sub_boundary)
-                all_sub_boundaries.append(current_sub_boundary)
-                current_sub_boundary = set()
-                cbp = boundary_points.pop()
-
-        if len(boundary_points) > 0:
-            all_sub_boundaries.append(boundary_points)
-
-        if len(current_sub_boundary) > 0:
-            all_sub_boundaries.append(current_sub_boundary)
-
-        #print(all_sub_boundaries)
-        return all_sub_boundaries
-
-
     def find_outermost_boundary(self, all_sub_boundaries):
         '''
         Find which boundary contains all others (i.e., the room boundary).
@@ -321,6 +220,7 @@ class BoundaryCalculations:
         crossroad_decision_chains_explored = list()
         current_decision_chain = list()
         seen_4_cross = False
+        print_debug = False
 
         # when we visit vertices and build our paths, we may discover disconnected graphs, where a path can be formed,
         # but it only visits a subset of vertices. If that is the case, then we want to re-run the algorithm and choose
@@ -340,15 +240,21 @@ class BoundaryCalculations:
                 current_sub_boundary.append(cbp)
                 visited_points.add(cbp)
                 neighbours_found = 0
+                next_points = []
                 # now move forward until we see either a visited point or a crossroads (more than 2 valid paths from here)
                 for move in na.MOVE_MOVES: # walk in all directions from current point until we find another point from the boundary or exhaust all moves
                     new_x, new_y = na.apply(cbp[0], cbp[1], move)
                     # count how many other boundary points we can see from this one
+
+                    if any([current_decision_chain + [((new_x, new_y), cbp)] in v for v in crossroad_decision_chains_explored]):
+                        print("FILTERD DECISION CHAIN")
+
                     if ((new_x, new_y) in boundary_points and # only proceed if the point is whithin accessible points
                         cbp_prev != (new_x, new_y) and # and we're not going backwards
                         cbp_prev_prev != (new_x, new_y) and # to avoid triangular paths around every 90 degree corner
                         not any([current_decision_chain + [((new_x, new_y), cbp)] in v for v in crossroad_decision_chains_explored])): # and we haven't seen this kind of path before (to avoid cyclic travelling)
                         neighbours_found += 1
+                        next_points.append((new_x, new_y))
                         if neighbours_found == 1:
                             # The first neighbour that we find will be the regular one to explore
                             cbp_next = (new_x, new_y)
@@ -361,7 +267,8 @@ class BoundaryCalculations:
                             crossroads.append(((new_x, new_y), cbp, cbp_prev, current_sub_boundary.copy(), current_decision_chain.copy()))
 
                             #print("len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, "(new_x, new_y): ", (new_x, new_y))
-
+                if print_debug:
+                    print("next_points: ", next_points)
 
                 # If we have 1 neighbour, then cbp is an end part of an unconnected boundary. We're not interested int this kind of path,
                 # purge it.
@@ -374,8 +281,8 @@ class BoundaryCalculations:
                         #crossroad_decision_chains_explored.append(discovered_vectors)
                 else:
                     if neighbours_found >= 3:
-                        # print("neighbours_found: ", neighbours_found, "len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, " cbp_next: ", cbp_next)
-                        # print("len(crossroad_decision_chains_explored): ", len(crossroad_decision_chains_explored))
+                        #print("neighbours_found: ", neighbours_found, "len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, " cbp_next: ", cbp_next)
+                        #print("len(crossroad_decision_chains_explored): ", len(crossroad_decision_chains_explored))
                         #print("set(crossroad_decision_chains_explored): ", set(crossroad_decision_chains_explored))
 
                         # for cr in [crossroads[i] for i in range(-2, 0)]:
@@ -388,24 +295,27 @@ class BoundaryCalculations:
 
                     # if there was a crossroad, then remember also the path that we're taking now as a branch
                     # of that crossroad that has been explored.
-                    if neighbours_found > 1:
-                        current_decision_chain.append((cbp_next, cbp))
+                    #if neighbours_found > 1:
+                    current_decision_chain.append((cbp_next, cbp))
 
                     cbp_prev_prev = cbp_prev
                     cbp_prev = cbp
                     cbp = cbp_next
+                    print(len(current_decision_chain), " @ ", current_decision_chain)
                     # see if we've found a closure for the current boundary
-                    if cbp in current_sub_boundary:
+                    while cbp is not None and cbp in current_sub_boundary:
                         #breakpoint()
                         # if we see cbp already in the current path, then we have completed a loop and current_sub_boundary is a complete sub-boundary
+                        orig_sb = current_sub_boundary
                         cbp_ndx = current_sub_boundary.index(cbp)
                         current_sub_boundary = current_sub_boundary[cbp_ndx:]
                         # only add it to the all_sub_boundaries if it is a unique boundary. We are not interested
                         # in boundaries that have different start end end points, but contain the same points
-                        s_all_sub_boundaries = set(current_sub_boundary)
-                        if all(s_all_sub_boundaries != set(sb) for sb in all_sub_boundaries):
+                        s_current_sub_boundary = set(current_sub_boundary)
+                        if all(s_current_sub_boundary != set(sb) for sb in all_sub_boundaries):
                             all_sub_boundaries.append(current_sub_boundary)
 
+                        breakpoint()
                         # remember a decision chain that we have already explored
                         crossroad_decision_chains_explored.append(current_decision_chain.copy())
 
@@ -796,25 +706,41 @@ class BoundaryCalculations:
 if __name__ == "__main__":
     bc = BoundaryCalculations()
 
-    # reachable_positions = bc.create_grid_points_product(0.25, 1.0, 0.25, 1.0)
-    # unreachable_positions = bc.create_grid_points_product(0.0, 1.25, 0.0, 1.25)
-    # unreachable_positions = unreachable_positions - reachable_positions
-    # # print(reachable_positions)
-    # # print(unreachable_positions)
-    # room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.0), (1.0, 1.0), (1.00, 0.25)], Point(0.5, 0.5))
-    #
-    # boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
-    #
-    # print("boundary_points")
-    # bc.visualize(boundary_points) #1
-    #
-    # separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
-    # print("boundary count: ", len(separated_boundaries))
-    # #bc.visualize(separated_boundaries[-1])
-    # for b in separated_boundaries:
-    #     bc.visualize(b)
-    #
+    # obstacl close to boundary
+    # reachable_positions = bc.create_grid_points_product(0.25, 1.25, 0.25, 1.25)
+    # unreachable_positions = bc.create_grid_points_product(0.0, 1.50, 0.0, 1.50)
+    # obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
+    #              (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
+    #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
+    #room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.25), (1.25, 1.25), (1.25, 0.25)], Point(0.5, 0.5))
+
+    # obstacle further from boundary
+    reachable_positions = bc.create_grid_points_product(0.25, 1.50, 0.25, 1.50)
+    unreachable_positions = bc.create_grid_points_product(0.0, 2.00, 0.0, 2.00)
+    obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
+                 (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
+                 (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
+
+    # print(reachable_positions)
     # exit()
+    reachable_positions = reachable_positions - obstacles
+    unreachable_positions = unreachable_positions - reachable_positions
+    print(reachable_positions)
+    print(unreachable_positions)
+    room_of_placement = ('LivingRoom', [(0.125, 0.125), (0.125, 1.38), (1.38, 1.38), (1.38, 0.125)], Point(0.5, 0.5))
+
+    boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
+
+    print("boundary_points")
+    bc.visualize(boundary_points) #1
+
+    separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
+    print("boundary count: ", len(separated_boundaries))
+    #bc.visualize(separated_boundaries[-1])
+    for b in separated_boundaries:
+        bc.visualize(b)
+
+    exit()
 
 
 

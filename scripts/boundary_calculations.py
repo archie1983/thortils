@@ -1,5 +1,6 @@
 import json, math, itertools
 
+from networkx.classes import all_neighbors
 from shapely.ops import unary_union
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
@@ -207,7 +208,8 @@ class BoundaryCalculations:
         '''
 
         boundary_points = boundary_points.copy()
-        all_sub_boundaries = list()
+        all_compacted_sub_boundaries = list()
+        all_explored_sub_boundaries = list()
         current_sub_boundary = list()
         neighbours_found = 0
         crossroads = deque() # stack for crossroad points
@@ -215,10 +217,6 @@ class BoundaryCalculations:
         cbp_prev = None
         cbp_prev_prev = None
         cbp_next = None
-        # all the decisions in all the crossroads that have been made so far. The basic unit will consist of the actual
-        # crossroad point and the direction taken. And a chain of such basic units is what we need to keep track of.
-        crossroad_decision_chains_explored = list()
-        current_decision_chain = list()
         seen_4_cross = False
         print_debug = False
 
@@ -246,25 +244,23 @@ class BoundaryCalculations:
                     new_x, new_y = na.apply(cbp[0], cbp[1], move)
                     # count how many other boundary points we can see from this one
 
-                    if any([current_decision_chain + [((new_x, new_y), cbp)] in v for v in crossroad_decision_chains_explored]):
-                        print("FILTERD DECISION CHAIN")
+                    if current_sub_boundary + [(new_x, new_y)] in all_explored_sub_boundaries:
+                        print("FILTERD SUB Boundary")
 
                     if ((new_x, new_y) in boundary_points and # only proceed if the point is whithin accessible points
                         cbp_prev != (new_x, new_y) and # and we're not going backwards
                         cbp_prev_prev != (new_x, new_y) and # to avoid triangular paths around every 90 degree corner
-                        not any([current_decision_chain + [((new_x, new_y), cbp)] in v for v in crossroad_decision_chains_explored])): # and we haven't seen this kind of path before (to avoid cyclic travelling)
+                        not current_sub_boundary + [(new_x, new_y)] in all_explored_sub_boundaries): # and we haven't seen this kind of path before (to avoid cyclic travelling)
                         neighbours_found += 1
                         next_points.append((new_x, new_y))
                         if neighbours_found == 1:
                             # The first neighbour that we find will be the regular one to explore
                             cbp_next = (new_x, new_y)
+                            #print("reg w: ", cbp, " -> ", (new_x, new_y))
                         else:
                             # if there are more, then store them as directions in crossroads
-                            #print(((new_x, new_y), cbp), (((new_x, new_y), cbp) in discovered_vectors), len(discovered_vectors))
-                            #print(discovered_vectors | {((new_x, new_y), cbp)})
-                            #print(len(crossroad_decision_chains_explored))
-                            #print(crossroad_decision_chains_explored)
-                            crossroads.append(((new_x, new_y), cbp, cbp_prev, current_sub_boundary.copy(), current_decision_chain.copy()))
+                            crossroads.append(((new_x, new_y), cbp, cbp_prev, current_sub_boundary.copy()))
+                            #print("cross: ", cbp, " -> ", (new_x, new_y))
 
                             #print("len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, "(new_x, new_y): ", (new_x, new_y))
                 if print_debug:
@@ -277,60 +273,43 @@ class BoundaryCalculations:
                     #breakpoint()
                     cbp = None
                     if len(crossroads) > 0:
-                        cbp, cbp_prev, cbp_prev_prev, current_sub_boundary, current_decision_chain = crossroads.pop()
-                        #crossroad_decision_chains_explored.append(discovered_vectors)
+                        cbp, cbp_prev, cbp_prev_prev, current_sub_boundary = crossroads.pop()
+                        #print("exploring cross1: ", cbp_prev, " -> ", cbp, " CSB: ", current_sub_boundary)
                 else:
-                    if neighbours_found >= 3:
-                        #print("neighbours_found: ", neighbours_found, "len(crossroads): ", len(crossroads), "cbp: ", cbp, "cbp_prev: ", cbp_prev, " cbp_next: ", cbp_next)
-                        #print("len(crossroad_decision_chains_explored): ", len(crossroad_decision_chains_explored))
-                        #print("set(crossroad_decision_chains_explored): ", set(crossroad_decision_chains_explored))
-
-                        # for cr in [crossroads[i] for i in range(-2, 0)]:
-                        #     print("3neighbour cr: ", cr)
-                        seen_4_cross = True
-                        #breakpoint()
-                    if neighbours_found == 2 and seen_4_cross:
-                        #breakpoint()
-                        pass
-
-                    # if there was a crossroad, then remember also the path that we're taking now as a branch
-                    # of that crossroad that has been explored.
-                    #if neighbours_found > 1:
-                    current_decision_chain.append((cbp_next, cbp))
-
                     cbp_prev_prev = cbp_prev
                     cbp_prev = cbp
                     cbp = cbp_next
-                    print(len(current_decision_chain), " @ ", current_decision_chain)
-                    # see if we've found a closure for the current boundary
-                    while cbp is not None and cbp in current_sub_boundary:
-                        #breakpoint()
-                        # if we see cbp already in the current path, then we have completed a loop and current_sub_boundary is a complete sub-boundary
-                        orig_sb = current_sub_boundary
-                        cbp_ndx = current_sub_boundary.index(cbp)
-                        current_sub_boundary = current_sub_boundary[cbp_ndx:]
-                        # only add it to the all_sub_boundaries if it is a unique boundary. We are not interested
-                        # in boundaries that have different start end end points, but contain the same points
-                        s_current_sub_boundary = set(current_sub_boundary)
-                        if all(s_current_sub_boundary != set(sb) for sb in all_sub_boundaries):
-                            all_sub_boundaries.append(current_sub_boundary)
 
-                        breakpoint()
-                        # remember a decision chain that we have already explored
-                        crossroad_decision_chains_explored.append(current_decision_chain.copy())
+                #print(len(current_decision_chain), " @ ", current_decision_chain)
+                # see if we've found a closure for the current boundary
+                while cbp is not None and cbp in current_sub_boundary:
+                    #breakpoint()
+                    # if we see cbp already in the current path, then we have completed a loop and current_sub_boundary is a complete sub-boundary
+                    cbp_ndx = current_sub_boundary.index(cbp)
+                    compacted_sub_boundary = current_sub_boundary[cbp_ndx:]
+                    # only add it to the all_sub_boundaries if it is a unique boundary. We are not interested
+                    # in boundaries that have different start end end points, but contain the same points
+                    s_compacted_sub_boundary = set(compacted_sub_boundary)
+                    if all(s_compacted_sub_boundary != set(sb) for sb in all_compacted_sub_boundaries):
+                        all_compacted_sub_boundaries.append(compacted_sub_boundary)
 
-                        # if there are more crossroads left, then explore those
-                        cbp = None
-                        if len(crossroads) > 0:
-                            cbp, cbp_prev, cbp_prev_prev, current_sub_boundary, current_decision_chain = crossroads.pop()
-                            #crossroad_decision_chains_explored.append(discovered_vectors)
+                    #breakpoint()
+                    # remember a decision chain that we have already explored
+                    all_explored_sub_boundaries.append(current_sub_boundary.copy())
 
-            all_sub_boundaries = [sb for sb in all_sub_boundaries if len(sb) > 2]
-            all_sub_boundaries = sorted(all_sub_boundaries, key=lambda boundary: Polygon(boundary).area)
+                    # if there are more crossroads left, then explore those
+                    cbp = None
+                    if len(crossroads) > 0:
+                        cbp, cbp_prev, cbp_prev_prev, current_sub_boundary = crossroads.pop()
+                        #print("exploring cross2: ", cbp_prev, " -> ", cbp, " CSB: ", current_sub_boundary)
+                        #crossroad_decision_chains_explored.append(discovered_vectors)
+
+            all_compacted_sub_boundaries = [sb for sb in all_compacted_sub_boundaries if len(sb) > 2]
+            all_compacted_sub_boundaries = sorted(all_compacted_sub_boundaries, key=lambda boundary: Polygon(boundary).area)
             # for sb in all_sub_boundaries:
             #     print("SB: ", sb)
             #print("len(crossroads) at END: ", len(crossroads))
-        return all_sub_boundaries
+        return all_compacted_sub_boundaries
 
     def filter_double_boundaries(self, boundary_points, step=0.125):
         l_boundary_points = list(boundary_points)
@@ -534,13 +513,12 @@ class BoundaryCalculations:
         # print("single_edge_vertices", single_edge_vertices)
         return all_v_rects, single_edge_vertices
 
-    def remove_1_edge_from_rectangle(self, removal_candidates, step=0.125):
-        x_vals = [p[0] for p in removal_candidates]
+    def remove_sharp_corners(self, boundary, na, step=0.125):
+        x_vals = [p[0] for p in boundary]
         x_vals_uq = list(set(x_vals))
         x_vals_uq = sorted(x_vals_uq, key=lambda x: x)
         points_2d = []
-        all_v_rects = set()  # vertical rectangles
-        all_mid_vertices = set()
+        points_to_remove = set()
 
         # stack all points by their x-value, e.g.:
         #_______0______________1______________2______
@@ -549,11 +527,42 @@ class BoundaryCalculations:
         # (5.25, 6.62) |              | (5.88, 3.75)
         #
         for i in range(len(x_vals_uq)):
-            new_col = [bp for bp in removal_candidates if bp[0] == x_vals_uq[i]]
+            new_col = [bp for bp in boundary if bp[0] == x_vals_uq[i]]
             new_col = sorted(new_col, key = lambda x: x[1])
             #print(new_col)
             points_2d.append(new_col)
-        print("points_2d: ", points_2d)
+
+        # for c in range(len(x_vals_uq)):
+        #     cur_col = points_2d[c]
+        #     for (x, y) in cur_col:
+        #         # if we have a point to the right or to the left of this one and also one above or below,
+        #         # then this is a sharp corner, which we want to remove
+        #         to_the_east = na.apply(x, y, na.MOVE_EAST)
+        #         to_the_west = na.apply(x, y, na.MOVE_WEST)
+        #         to_the_north = na.apply(x, y, na.MOVE_NORTH)
+        #         to_the_south = na.apply(x, y, na.MOVE_SOUTH)
+        #         all_neighbors = [na.apply(x, y, move) for move in na.MOVE_MOVES]
+        #         if ((to_the_east in boundary or to_the_west in boundary) and
+        #                 (to_the_north in boundary or to_the_south in boundary)):
+        #             points_to_remove.add((x, y))
+        #         print((x, y))
+
+        for c in range(len(x_vals_uq)):
+            cur_col = points_2d[c]
+            for (x, y) in cur_col:
+                # if we have a point to the right or to the left of this one and also one above or below,
+                # then this is a sharp corner, which we want to remove
+                all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
+
+                for n in all_neighbors:
+                    all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
+                    if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
+                        boundary.discard((x, y))
+                        print("discarded: ", (x, y))
+
+        #print("points_to_remove: ", points_to_remove)
+
+        return boundary
 
     def find_room_perimeter_path(self, reachable_room_points, unreachable_room_points, room_of_placement):
         # First let's establish the boundaries between walkable and non-walkable locations in the room
@@ -706,41 +715,45 @@ class BoundaryCalculations:
 if __name__ == "__main__":
     bc = BoundaryCalculations()
 
-    # obstacl close to boundary
-    # reachable_positions = bc.create_grid_points_product(0.25, 1.25, 0.25, 1.25)
-    # unreachable_positions = bc.create_grid_points_product(0.0, 1.50, 0.0, 1.50)
+    # # obstacl close to boundary
+    # # reachable_positions = bc.create_grid_points_product(0.25, 1.25, 0.25, 1.25)
+    # # unreachable_positions = bc.create_grid_points_product(0.0, 1.50, 0.0, 1.50)
+    # # obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
+    # #              (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
+    # #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
+    # #room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.25), (1.25, 1.25), (1.25, 0.25)], Point(0.5, 0.5))
+    #
+    # # obstacle further from boundary
+    # reachable_positions = bc.create_grid_points_product(0.25, 1.50, 0.25, 1.50)
+    # unreachable_positions = bc.create_grid_points_product(0.0, 2.00, 0.0, 2.00)
     # obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
     #              (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
-    #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
-    #room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.25), (1.25, 1.25), (1.25, 0.25)], Point(0.5, 0.5))
-
-    # obstacle further from boundary
-    reachable_positions = bc.create_grid_points_product(0.25, 1.50, 0.25, 1.50)
-    unreachable_positions = bc.create_grid_points_product(0.0, 2.00, 0.0, 2.00)
-    obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
-                 (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
-                 (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
-
-    # print(reachable_positions)
+    #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75),}
+    #      #        (0.25, 0.25), (1.25, 1.25), (0.25, 1.25), (1.25, 0.25)}
+    #
+    # # print(reachable_positions)
+    # # exit()
+    # reachable_positions = reachable_positions - obstacles
+    # unreachable_positions = unreachable_positions - reachable_positions
+    # #print(reachable_positions)
+    # #print(unreachable_positions)
+    # room_of_placement = ('LivingRoom', [(0.125, 0.125), (0.125, 1.38), (1.38, 1.38), (1.38, 0.125)], Point(0.5, 0.5))
+    #
+    # boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
+    # print("boundary_points")
+    # bc.visualize(boundary_points) #1
+    #
+    # boundary_points = bc.remove_sharp_corners(boundary_points, bc.na)
+    # print("boundary_points without sharps")
+    # bc.visualize(boundary_points) #1
+    #
+    # separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
+    # print("boundary count: ", len(separated_boundaries))
+    # bc.visualize(separated_boundaries[-1])
+    # # for b in separated_boundaries:
+    # #     bc.visualize(b)
+    #
     # exit()
-    reachable_positions = reachable_positions - obstacles
-    unreachable_positions = unreachable_positions - reachable_positions
-    print(reachable_positions)
-    print(unreachable_positions)
-    room_of_placement = ('LivingRoom', [(0.125, 0.125), (0.125, 1.38), (1.38, 1.38), (1.38, 0.125)], Point(0.5, 0.5))
-
-    boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
-
-    print("boundary_points")
-    bc.visualize(boundary_points) #1
-
-    separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
-    print("boundary count: ", len(separated_boundaries))
-    #bc.visualize(separated_boundaries[-1])
-    for b in separated_boundaries:
-        bc.visualize(b)
-
-    exit()
 
 
 
@@ -788,6 +801,8 @@ if __name__ == "__main__":
     removal_candidates = removal_candidates - rects_vert - rects_horiz - single_edge_vertices_vert - single_edge_vertices_horiz
 
     boundary_points = boundary_points - removal_candidates
+
+    boundary_points = bc.remove_sharp_corners(boundary_points, bc.na)
 
     separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
     print("boundary count: ", len(separated_boundaries))

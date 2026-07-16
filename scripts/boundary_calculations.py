@@ -514,44 +514,16 @@ class BoundaryCalculations:
         return all_v_rects, single_edge_vertices
 
     def remove_sharp_corners(self, boundary, na, step=0.125):
-        x_vals = [p[0] for p in boundary]
-        x_vals_uq = list(set(x_vals))
-        x_vals_uq = sorted(x_vals_uq, key=lambda x: x)
-        points_2d = []
-        points_to_remove = set()
-
-        # stack all points by their x-value, e.g.:
-        #_______0______________1______________2______
-        # (5.25, 6.88) | (5.37, 3.50) | (5.88, 3.50)
-        # (5.25, 6.75) | (5.37, 3.62) | (5.88, 3.62)
-        # (5.25, 6.62) |              | (5.88, 3.75)
-        #
-        for i in range(len(x_vals_uq)):
-            new_col = [bp for bp in boundary if bp[0] == x_vals_uq[i]]
-            new_col = sorted(new_col, key = lambda x: x[1])
-            #print(new_col)
-            points_2d.append(new_col)
-
-        # for c in range(len(x_vals_uq)):
-        #     cur_col = points_2d[c]
-        #     for (x, y) in cur_col:
-        #         # if we have a point to the right or to the left of this one and also one above or below,
-        #         # then this is a sharp corner, which we want to remove
-        #         to_the_east = na.apply(x, y, na.MOVE_EAST)
-        #         to_the_west = na.apply(x, y, na.MOVE_WEST)
-        #         to_the_north = na.apply(x, y, na.MOVE_NORTH)
-        #         to_the_south = na.apply(x, y, na.MOVE_SOUTH)
-        #         all_neighbors = [na.apply(x, y, move) for move in na.MOVE_MOVES]
-        #         if ((to_the_east in boundary or to_the_west in boundary) and
-        #                 (to_the_north in boundary or to_the_south in boundary)):
-        #             points_to_remove.add((x, y))
-        #         print((x, y))
-
-        # for c in range(len(x_vals_uq)):
-        #     cur_col = points_2d[c]
-        #     for (x, y) in cur_col:
         boundary_copy = boundary.copy()
-        removable = set()
+        # for (x, y) in boundary_copy:
+        #     all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
+        #
+        #     for n in all_neighbors:
+        #         all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
+        #         if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
+        #             boundary.discard((x, y))
+        #             #print("discarded: ", (x, y))
+
         for (x, y) in boundary_copy:
             # if we have a point to the right or to the left of this one and also one above or below,
             # then this is a sharp corner, which we want to remove.
@@ -567,9 +539,6 @@ class BoundaryCalculations:
             if all_reachable_points_from_all_neighbours.intersection(all_neighbors) == all_neighbors:
                 boundary.discard((x, y))
                 #print("discarded: ", (x, y))
-                #removable.add((x, y))
-
-        #print("points_to_remove: ", removable)
 
         return boundary
 

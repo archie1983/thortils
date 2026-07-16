@@ -542,8 +542,11 @@ class BoundaryCalculations:
 
         return boundary
 
-    def find_room_perimeter_path(self, reachable_room_points, unreachable_room_points, room_of_placement):
+    def find_room_perimeter_path(self, reachable_room_points, unreachable_room_points, room_of_placement, house):
         # First let's establish the boundaries between walkable and non-walkable locations in the room
+        expanded_poly = self.expand_room_poly_if_needed(room_of_placement, house)
+        room_of_placement = (room_of_placement[0], expanded_poly, room_of_placement[2])
+
         boundary_points = self.get_room_perimeter_points_1st_pass(reachable_room_points, unreachable_room_points,
                                                                 room_of_placement, self.na)
         # Now we have to detect boundaries that are very near each other, because those are a nightmare to handle.
@@ -571,6 +574,11 @@ class BoundaryCalculations:
         # Now split away the removal candidates from the boundary point set and we have the boundary that we
         # can process further.
         boundary_points = boundary_points - removal_candidates
+
+        # Every sharp corner works as at least two paths instead of 1 (properly around the corner and a diagonal
+        # shortcut). The extra paths are not interesting, but for the algorithm they will create a roughly exponential
+        # complexity (1 corner- 2 paths, 4 corners- 16 paths, and so on- and that's only with 2 paths per corner).
+        boundary_points = self.remove_sharp_corners(boundary_points, self.na)
 
         # Finally, take the optimized bounadries and find the biggest polygon that can be detected between them-
         # that's the floor perimeter that we want.

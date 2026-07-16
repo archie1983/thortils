@@ -607,13 +607,13 @@ def main(init_func=None, step_func=None):
             # print("unreachable_room_points: ", unreachable_room_points)
             # exit()
 
-            print("reachable_positions: ", reachable_positions)
-            print("unreachable_positions: ", unreachable_positions)
-            exit()
+            # print("reachable_positions: ", reachable_positions)
+            # print("unreachable_positions: ", unreachable_positions)
+            # exit()
 
             # print("room_of_placement: ", room_of_placement)
             # exit()
-            boundary_points = bc.find_room_perimeter_path(reachable_positions, unreachable_positions, room_of_placement)
+            boundary_points = bc.find_room_perimeter_path(reachable_positions, unreachable_positions, room_of_placement, house)
 
             # Visualize path and obstructed space
             atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,

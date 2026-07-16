@@ -547,20 +547,29 @@ class BoundaryCalculations:
         #             points_to_remove.add((x, y))
         #         print((x, y))
 
-        for c in range(len(x_vals_uq)):
-            cur_col = points_2d[c]
-            for (x, y) in cur_col:
-                # if we have a point to the right or to the left of this one and also one above or below,
-                # then this is a sharp corner, which we want to remove
-                all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
+        # for c in range(len(x_vals_uq)):
+        #     cur_col = points_2d[c]
+        #     for (x, y) in cur_col:
+        boundary_copy = boundary.copy()
+        removable = set()
+        for (x, y) in boundary_copy:
+            # if we have a point to the right or to the left of this one and also one above or below,
+            # then this is a sharp corner, which we want to remove.
+            # But we want to do that only if we don't exterminate valid paths between points. Therefore we
+            # will only remove a point if all its reachable neighbours remain connected.
+            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
 
-                for n in all_neighbors:
-                    all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
-                    if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
-                        boundary.discard((x, y))
-                        print("discarded: ", (x, y))
+            all_reachable_points_from_all_neighbours = set()
+            for n in all_neighbors:
+                reachable_points_from_n = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
+                all_reachable_points_from_all_neighbours.update(reachable_points_from_n)
 
-        #print("points_to_remove: ", points_to_remove)
+            if all_reachable_points_from_all_neighbours.intersection(all_neighbors) == all_neighbors:
+                boundary.discard((x, y))
+                #print("discarded: ", (x, y))
+                #removable.add((x, y))
+
+        #print("points_to_remove: ", removable)
 
         return boundary
 

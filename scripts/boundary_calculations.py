@@ -42,7 +42,7 @@ class BoundaryCalculations:
         # Test each reachable point whether it has neighbours that are not reachable
         boundary_points = set()
         for rpos in reachable_room_points:
-            for move in na.STRAIGHT_MOVE_MOVES:
+            for move in na.MOVE_MOVES:
                 new_x, new_y = na.apply(rpos[0], rpos[1], move)
                 if (new_x, new_y) in unreachable_room_points or (new_x, new_y) not in reachable_room_points:
                 #if (new_x, new_y) not in reachable_room_points:
@@ -531,6 +531,163 @@ class BoundaryCalculations:
             # will only remove a point if all its reachable neighbours remain connected.
             all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
 
+            # Do the neighbours' neighbours have common neighbours?
+            discard = False
+            # for n in all_neighbors:
+            #     #neighbors_of_this_neighbor = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
+            #     neighbors_of_other_neighbors_but_not_n = {na.apply(neighbor[0], neighbor[1], move) for move in na.MOVE_MOVES for neighbor in all_neighbors - {n} if na.apply(neighbor[0], neighbor[1], move) in boundary}
+            #     if n not in neighbors_of_other_neighbors_but_not_n:
+            #         discard = False
+            #         break
+
+            # has to be at least one level1 neighbour, whose neighbours (level2) include all other level 1 neighbours.
+            for n in all_neighbors:
+                # all_neighbors - {n} # all other level 1 neighbours
+                # n_neighbors = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary} # neighbots of n
+                n_neighbors = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
+                must_have = all_neighbors - {n}
+                if n_neighbors.intersection(must_have) == must_have:
+                    discard = True
+
+            if discard:
+                boundary.discard((x, y))
+
+        return boundary
+
+    def remove_sharp_corners4(self, boundary, na, step=0.125):
+        boundary_copy = boundary.copy()
+        # for (x, y) in boundary_copy:
+        #     all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
+        #
+        #     for n in all_neighbors:
+        #         all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
+        #         if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
+        #             boundary.discard((x, y))
+        #             #print("discarded: ", (x, y))
+
+        to_discard = set()
+        for (x, y) in boundary:
+            # if we have a point to the right or to the left of this one and also one above or below,
+            # then this is a sharp corner, which we want to remove.
+            # But we want to do that only if we don't exterminate valid paths between points. Therefore we
+            # will only remove a point if all its reachable neighbours remain connected.
+            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
+            if len(all_neighbors) < 3: continue
+            all_neighbors_neighbours = {na.apply(n[0], n[1], move)
+                                        for move in na.MOVE_MOVES
+                                        for n in all_neighbors
+                                        if na.apply(n[0], n[1], move) in boundary}
+
+            boundary_copy.discard((x, y))
+            #all_neighbors_after_discard = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary_copy}
+            all_neighbors_neighbours_after_discard = {na.apply(n[0], n[1], move)
+                                        for move in na.MOVE_MOVES
+                                        for n in all_neighbors
+                                        if na.apply(n[0], n[1], move) in boundary_copy}
+
+            all_neighbors_neighbours.discard((x, y))
+
+            if all_neighbors_neighbours_after_discard == all_neighbors_neighbours:
+                to_discard.add((x, y))
+                print("discarded: ", (x, y))
+            else:
+                boundary_copy.add((x, y))
+
+        return boundary - to_discard
+
+    def remove_sharp_corners5(self, boundary, na, step=0.125):
+        boundary_copy = boundary.copy()
+        to_discard = set()
+        for (x, y) in boundary:
+            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary_copy}
+
+            for n in all_neighbors:
+                step1_points = {na.apply(n[0], n[1], move)
+                                        for move in na.MOVE_MOVES
+                                        if na.apply(n[0], n[1], move) in boundary_copy}
+
+                # step2_points = {na.apply(point[0], point[1], move)
+                #                         for move in na.MOVE_MOVES
+                #                         for point in step1_points
+                #                         if na.apply(n[0], n[1], move) in boundary}
+                step2_points = set()
+
+                for point in step1_points:
+                    # if x == y:
+                    #     print("Step2 update at ", point, " : ", {na.apply(point[0], point[1], move)
+                    #                     for move in na.MOVE_MOVES
+                    #                     if na.apply(point[0], point[1], move) in boundary})
+                    step2_points.update({na.apply(point[0], point[1], move)
+                                    for move in na.MOVE_MOVES
+                                    if na.apply(point[0], point[1], move) in boundary_copy})
+
+                boundary_copy.discard((x, y))
+
+                step1_points_after_discard = {na.apply(n[0], n[1], move)
+                                for move in na.MOVE_MOVES
+                                if na.apply(n[0], n[1], move) in boundary_copy}
+
+                step2_points_after_discard = set()
+
+                for point in step1_points_after_discard:
+                    step2_points_after_discard.update({na.apply(point[0], point[1], move)
+                                    for move in na.MOVE_MOVES
+                                    if na.apply(point[0], point[1], move) in boundary_copy})
+
+                # step2_points_after_discard = {na.apply(point[0], point[1], move)
+                #                 for move in na.MOVE_MOVES
+                #                 for point in step1_points_after_discard
+                #                 if na.apply(n[0], n[1], move) in boundary_copy}
+
+                if x==y:
+                    print("(x, y)", (x, y))
+                    print("step1_points: ", step1_points)
+                    print("step2_points: ", step2_points)
+
+                    print("step1_points_after_discard: ", step1_points_after_discard)
+                    print("step2_points_after_discard: ", step2_points_after_discard)
+
+                before_discard = step1_points.union(step2_points) - {(x, y)}
+                after_discard = step1_points_after_discard.union(step2_points_after_discard)
+
+                if before_discard == after_discard:
+                    to_discard.add((x, y))
+                else:
+                    boundary_copy.add((x, y))
+
+        return boundary - to_discard
+
+    def remove_sharp_corners3(self, boundary, na, step=0.125):
+        boundary_copy = boundary.copy()
+        for (x, y) in boundary_copy:
+            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
+
+            for n in all_neighbors:
+                all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
+                if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
+                    boundary.discard((x, y))
+                    #print("discarded: ", (x, y))
+
+        return boundary
+
+    def remove_sharp_corners2(self, boundary, na, step=0.125):
+        boundary_copy = boundary.copy()
+        # for (x, y) in boundary_copy:
+        #     all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
+        #
+        #     for n in all_neighbors:
+        #         all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
+        #         if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
+        #             boundary.discard((x, y))
+        #             #print("discarded: ", (x, y))
+
+        for (x, y) in boundary_copy:
+            # if we have a point to the right or to the left of this one and also one above or below,
+            # then this is a sharp corner, which we want to remove.
+            # But we want to do that only if we don't exterminate valid paths between points. Therefore we
+            # will only remove a point if all its reachable neighbours remain connected.
+            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
+
             all_reachable_points_from_all_neighbours = set()
             for n in all_neighbors:
                 reachable_points_from_n = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
@@ -538,7 +695,7 @@ class BoundaryCalculations:
 
             if all_reachable_points_from_all_neighbours.intersection(all_neighbors) == all_neighbors:
                 boundary.discard((x, y))
-                #print("discarded: ", (x, y))
+                print("discarded: ", (x, y), " all_reachable_points_from_all_neighbours: ", all_reachable_points_from_all_neighbours, " all_neighbors: ", all_neighbors)
 
         return boundary
 
@@ -700,7 +857,7 @@ class BoundaryCalculations:
 
 if __name__ == "__main__":
     bc = BoundaryCalculations()
-
+    #
     # # obstacl close to boundary
     # # reachable_positions = bc.create_grid_points_product(0.25, 1.25, 0.25, 1.25)
     # # unreachable_positions = bc.create_grid_points_product(0.0, 1.50, 0.0, 1.50)
@@ -729,7 +886,7 @@ if __name__ == "__main__":
     # print("boundary_points")
     # bc.visualize(boundary_points) #1
     #
-    # boundary_points = bc.remove_sharp_corners(boundary_points, bc.na)
+    # boundary_points = bc.remove_sharp_corners5(boundary_points, bc.na)
     # print("boundary_points without sharps")
     # bc.visualize(boundary_points) #1
     #
@@ -786,9 +943,11 @@ if __name__ == "__main__":
 
     removal_candidates = removal_candidates - rects_vert - rects_horiz - single_edge_vertices_vert - single_edge_vertices_horiz
 
-    boundary_points = boundary_points - removal_candidates
+    #boundary_points = boundary_points - removal_candidates
 
-    boundary_points = bc.remove_sharp_corners(boundary_points, bc.na)
+    boundary_points = bc.remove_sharp_corners5(boundary_points, bc.na)
+    print("boundary_points with no sharps")
+    bc.visualize(boundary_points)
 
     separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
     print("boundary count: ", len(separated_boundaries))

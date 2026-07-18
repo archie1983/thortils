@@ -667,23 +667,58 @@ class BoundaryCalculations:
 
         return boundary - to_discard
 
-    def remove_sharp_corners6(self, boundary, na, step=0.125):
+    def remove_redundant_points(self, boundary, na, step=0.125):
+        '''
+        Redundant points are undesirable, because they create redundant paths. For example
+        consider the following 90 degree corner:
+
+             C
+             |
+        B----A
+
+        If we're at B, then we can get to C either directly, or through point A, following path BAC. That creates
+        2 paths that the algorithm needs to consider. If we have another corner like this, then we get 4 paths.
+        The third one will give us 8 paths and so on. And that's just corners with 2 possible paths. If we have
+        structures with more possible paths (e.g. two sequences of points side by side), then the multiplicatory
+        effect becomes even worse. Before you know it, what should have been like 11 boundaries to explore, has
+        turned into 100s of thousands or millions and our algorithm hangs because it is processing all the redundant
+        paths. That's why we want to remove the redundant points.
+
+        The way we do it, is this:
+        1) Take any point and look at its immediate neighbours
+        2) For each neighbour, see where we can get by performing just 1 step
+        3) See where we can get by performing exactly 2 steps from each original neighbour
+        4) The union of vertices acquired in steps (1) and (2) form the points that we want to be still reachable
+        within 2 steps or less even after removing a redundant point.
+        5) Now remove the point selected at step (1) and repeat steps (2) and (3).
+        6) If union of vertices acquired is the same as before, then we can safely leave the point removed.
+        7) If there is a difference for 1 or more neighbours, then we have to put that point from step (1) back because it is not redundant.
+
+        We can, of course, optimize further, by performing 3 steps instead of 2 after removal. That way we can also remove
+        the point if all vertices are still reachable, but might take an extra 1 step. This leads to better results for
+        our purposes here. We could of course carry on and do 4 or more steps, but then the boundary might start
+        degenerating beyond what is desired
+
+        :param boundary:
+        :param na:
+        :param step:
+        :return:
+        '''
         boundary_copy = boundary.copy()
         to_discard = set()
+        # look at each point
         for (x, y) in boundary:
+            # get its neighbours
             all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary_copy}
             this_point_discard_decisions = []
             for n in all_neighbors:
+                # see where we can get in 1 step
                 step1_points = {na.apply(n[0], n[1], move)
                                         for move in na.MOVE_MOVES
                                         if na.apply(n[0], n[1], move) in boundary_copy}
-
-                # step2_points = {na.apply(point[0], point[1], move)
-                #                         for move in na.MOVE_MOVES
-                #                         for point in step1_points
-                #                         if na.apply(n[0], n[1], move) in boundary}
                 step2_points = set()
 
+                # see where we get in 2 steps
                 for point in step1_points:
                     # if x == y:
                     #     print("Step2 update at ", point, " : ", {na.apply(point[0], point[1], move)
@@ -693,8 +728,9 @@ class BoundaryCalculations:
                                     for move in na.MOVE_MOVES
                                     if na.apply(point[0], point[1], move) in boundary_copy})
 
+                # discard the point
                 boundary_copy.discard((x, y))
-
+                # and repeat the 1 step and 2 step experiments
                 step1_points_after_discard = {na.apply(n[0], n[1], move)
                                 for move in na.MOVE_MOVES
                                 if na.apply(n[0], n[1], move) in boundary_copy}
@@ -707,16 +743,11 @@ class BoundaryCalculations:
                                     if na.apply(point[0], point[1], move) in boundary_copy})
 
                 step3_points_after_discard = set()
-
+                # and do 3 steps too
                 for point in step2_points_after_discard:
                     step3_points_after_discard.update({na.apply(point[0], point[1], move)
                                     for move in na.MOVE_MOVES
                                     if na.apply(point[0], point[1], move) in boundary_copy})
-
-                # step2_points_after_discard = {na.apply(point[0], point[1], move)
-                #                 for move in na.MOVE_MOVES
-                #                 for point in step1_points_after_discard
-                #                 if na.apply(n[0], n[1], move) in boundary_copy}
 
                 # if x==y:
                 #     print("(x, y)", (x, y))
@@ -726,9 +757,13 @@ class BoundaryCalculations:
                 #     print("step1_points_after_discard: ", step1_points_after_discard)
                 #     print("step2_points_after_discard: ", step2_points_after_discard)
 
+                # vertices reachable before and after discarding the selected point
                 before_discard = step1_points.union(step2_points) - {(x, y)}
                 after_discard = step1_points_after_discard.union(step2_points_after_discard).union(step3_points_after_discard)
 
+                # if after the removal we can reach all the same vertices in 3 steps
+                # or less that we could previously reach in 2 or less, then this neighbour is not affected
+                # significantly by removing the point from step (1)
                 if after_discard.intersection(before_discard) == before_discard:
                     #to_discard.add((x, y))
                     #print("discarded: ", (x, y))
@@ -738,6 +773,9 @@ class BoundaryCalculations:
                     #boundary_copy.add((x, y))
                     break
 
+            # If all neighbours are not significantly affected, then remember that the point in question
+            # can be removed and leave it removed from the experimental boundary that we will carry on
+            # working with, otherwise reinstate it.
             if all(this_point_discard_decisions):
                 to_discard.add((x, y))
             else:
@@ -1034,7 +1072,7 @@ if __name__ == "__main__":
 
     #boundary_points = boundary_points - removal_candidates
 
-    boundary_points = bc.remove_sharp_corners6(boundary_points, bc.na)
+    boundary_points = bc.remove_redundant_points(boundary_points, bc.na)
     print("boundary_points with no sharps")
     bc.visualize(boundary_points)
 

@@ -50,148 +50,6 @@ class BoundaryCalculations:
                     break
         return boundary_points
 
-    def find_outermost_boundary(self, all_sub_boundaries):
-        '''
-        Find which boundary contains all others (i.e., the room boundary).
-        '''
-        # Convert each frozenset to a polygon
-        sub_boundary_polygons = []
-        for boundary_set in all_sub_boundaries:
-            if len(boundary_set) < 3:
-                continue  # Need at least 3 points for a polygon
-
-            # Sort points to form a proper polygon (you'll need to order them)
-            # This is a simple approach - you might want to sort by angle around centroid
-            points_list = list(boundary_set)
-            # For now, we'll use the convex hull as approximation
-            from shapely.geometry import Polygon
-            try:
-                polygon = Polygon(points_list).convex_hull
-                sub_boundary_polygons.append((boundary_set, polygon))
-            except:
-                continue
-
-        # Find the outermost polygon (the one that contains all others)
-        for i, (set_i, poly_i) in enumerate(sub_boundary_polygons):
-            is_outermost = True
-            for j, (set_j, poly_j) in enumerate(sub_boundary_polygons):
-                if i != j:
-                    # If poly_i contains poly_j, it might be the outer boundary
-                    if not poly_i.contains(poly_j):
-                        is_outermost = False
-                        break
-            if is_outermost:
-                return set_i  # Return as regular set of points
-
-        # Fallback: return the largest boundary
-        return max(all_sub_boundaries, key=len)
-
-
-    def extract_room_boundary(self, perimeter_points, room_polygon, margin=0.1):
-        """
-        Extract the room boundary by combining:
-        1. Filtering by room polygon
-        2. Taking the largest continuous component
-        """
-        # Step 1: Filter by room polygon first
-        polygon = Polygon(room_polygon)
-        boundary_candidates = set()
-
-        for point in perimeter_points:
-            shapely_point = Point(point[0], point[1])
-            # Keep points on or near the room boundary
-            if shapely_point.distance(polygon.boundary) <= margin:
-                boundary_candidates.add(point)
-
-        # Step 2: Find the largest connected component among candidates
-        if not boundary_candidates:
-            return set()
-
-        points_list = list(boundary_candidates)
-        tree = KDTree(points_list)
-        visited = set()
-        largest_component = set()
-
-        for i, point in enumerate(points_list):
-            if i not in visited:
-                component = set()
-                queue = deque([point])
-                visited.add(i)
-
-                while queue:
-                    current = queue.popleft()
-                    component.add(current)
-                    current_idx = points_list.index(current)
-
-                    neighbors = tree.query_ball_point(current, r=0.2)
-                    for neighbor_idx in neighbors:
-                        if neighbor_idx not in visited:
-                            visited.add(neighbor_idx)
-                            queue.append(points_list[neighbor_idx])
-
-                if len(component) > len(largest_component):
-                    largest_component = component
-
-        return largest_component
-
-
-    def find_largest_boundary(self, perimeter_points):
-        """
-        Find the largest connected component of perimeter points.
-        Assumes the room boundary is the largest component.
-        """
-        if not perimeter_points:
-            return set()
-
-        points_list = list(perimeter_points)
-        tree = KDTree(points_list)
-        visited = set()
-        largest_component = set()
-
-        for i, point in enumerate(points_list):
-            if i not in visited:
-                # BFS to find connected component
-                component = set()
-                queue = deque([point])
-                visited.add(i)
-
-                while queue:
-                    current = queue.popleft()
-                    component.add(current)
-                    current_idx = points_list.index(current)
-
-                    # Find neighbors within 0.2m (adjust based on grid resolution)
-                    neighbors = tree.query_ball_point(current, r=0.2)
-                    for neighbor_idx in neighbors:
-                        if neighbor_idx not in visited:
-                            visited.add(neighbor_idx)
-                            queue.append(points_list[neighbor_idx])
-
-                # Keep the largest component
-                if len(component) > len(largest_component):
-                    largest_component = component
-
-        return largest_component
-
-
-    def filter_perimeter_by_room(self, perimeter_points, room_polygon, margin=0.1):
-        """
-        Keep only perimeter points that are near the room's actual boundary.
-        Uses the room polygon to filter out internal obstacles.
-        """
-        polygon = Polygon(room_polygon)
-        boundary_points = set()
-
-        for point in perimeter_points:
-            # Check if point is on or very close to the polygon boundary
-            shapely_point = Point(point[0], point[1])
-            distance = shapely_point.distance(polygon.boundary)
-
-            if distance <= margin:  # Within margin of room boundary
-                boundary_points.add(point)
-
-        return boundary_points
-
     def get_room_perimeter_points_2nd_pass(self, boundary_points, na):
         '''
         Second pass for room boundary points. The idea is that we take any point in the boundary points from
@@ -312,6 +170,22 @@ class BoundaryCalculations:
         return all_compacted_sub_boundaries
 
     def filter_double_boundaries(self, boundary_points, step=0.125):
+        '''
+        Now we have to detect boundaries that are very near each other, because those are a nightmare to handle.
+        They effectively are 1 path anyway, but for an algorithm it becomes like a many possible turning points
+        switching between one boundary and another. It's best to remove them, so first we will get removal
+        candidates- all such double boundaries.
+
+        Usage:
+        removal_candidates, filtered_points = self.filter_double_boundaries(boundary_points)
+        This routine is for vertical ones, so to process horizontal double boundaries,
+        let's turn them by 90 degrees.
+        removal_candidates_90_deg = {(el[1], el[0]) for el in removal_candidates}
+
+        :param boundary_points:
+        :param step:
+        :return:
+        '''
         l_boundary_points = list(boundary_points)
         #l_boundary_points_sorted_by_x = sorted(l_boundary_points, key=lambda x: x[0])
         x_vals = [p[0] for p in l_boundary_points]
@@ -427,19 +301,44 @@ class BoundaryCalculations:
             plt.scatter([p[0] for p in collection_to_visualize2], [p[1] for p in collection_to_visualize2],
                         c='red', s=5, alpha=0.5, label='All perimeters')
 
-        # Plot filtered room boundary
-        # room_boundary = extract_room_boundary(perimeter_points, room_polygon)
-        # if room_boundary:
-        #     boundary_list = list(room_boundary)
-        #     plt.scatter([p[0] for p in boundary_list], [p[1] for p in boundary_list],
-        #                 c='blue', s=10, label='Room boundary')
-
         plt.legend()
         plt.axis('equal')
         plt.title('Room Boundary vs Internal Obstacle Perimeters')
         plt.show()
 
     def find_rectangles(self, removal_candidates, step=0.125):
+        '''
+        Now the way we are going to fix the double boundaries, is by removing one of them and keeping end
+        parts of both of them. So it's a bit like a narrow rectangle, from which we want to remove one long edge
+        and keep the other one and also keep both short edges. That's why we're finding rectangles here.
+
+        Usage:
+        removal_candidates, filtered_points = self.filter_double_boundaries(boundary_points)
+        # I've written processing routines for vertical ones, so to process horizontal double boundaries,
+        # let's turn them by 90 degrees.
+        removal_candidates_90_deg = {(el[1], el[0]) for el in removal_candidates}
+        # Now the way we are going to fix these double boundaries, is by removing one of them and keeping end
+        # parts of both of them. So it's a bit like a narrow rectangle, from which we want to remove one long edge
+        # and keep the other one and also keep both short edges. That's why we're finding rectangles here. Both
+        # horizontal and vertical rectangles.
+        rects_vert, single_edge_vertices_vert = self.find_rectangles(removal_candidates)
+        rects_horiz, single_edge_vertices_horiz = self.find_rectangles(removal_candidates_90_deg)
+        rects_horiz = {(el[1], el[0]) for el in rects_horiz} # restore rotation for the horizontal rectangles
+        # find the single long edge to remove
+        single_edge_vertices_horiz = {(el[1], el[0]) for el in single_edge_vertices_horiz}
+
+        # Now just simple set arithmetic- take the removal candidates and split away from them the short edges of the
+        # rectangles and also one of the long edges.
+        removal_candidates = removal_candidates - rects_vert - rects_horiz - single_edge_vertices_vert - single_edge_vertices_horiz
+
+        # Now split away the removal candidates from the boundary point set and we have the boundary that we
+        # can process further.
+        boundary_points = boundary_points - removal_candidates
+
+        :param removal_candidates:
+        :param step:
+        :return:
+        '''
         x_vals = [p[0] for p in removal_candidates]
         x_vals_uq = list(set(x_vals))
         x_vals_uq = sorted(x_vals_uq, key=lambda x: x)
@@ -512,160 +411,6 @@ class BoundaryCalculations:
         # print("all_mid_vertices: ", all_mid_vertices)
         # print("single_edge_vertices", single_edge_vertices)
         return all_v_rects, single_edge_vertices
-
-    def remove_sharp_corners(self, boundary, na, step=0.125):
-        boundary_copy = boundary.copy()
-        # for (x, y) in boundary_copy:
-        #     all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
-        #
-        #     for n in all_neighbors:
-        #         all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
-        #         if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
-        #             boundary.discard((x, y))
-        #             #print("discarded: ", (x, y))
-
-        for (x, y) in boundary_copy:
-            # if we have a point to the right or to the left of this one and also one above or below,
-            # then this is a sharp corner, which we want to remove.
-            # But we want to do that only if we don't exterminate valid paths between points. Therefore we
-            # will only remove a point if all its reachable neighbours remain connected.
-            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
-
-            # Do the neighbours' neighbours have common neighbours?
-            discard = False
-            # for n in all_neighbors:
-            #     #neighbors_of_this_neighbor = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
-            #     neighbors_of_other_neighbors_but_not_n = {na.apply(neighbor[0], neighbor[1], move) for move in na.MOVE_MOVES for neighbor in all_neighbors - {n} if na.apply(neighbor[0], neighbor[1], move) in boundary}
-            #     if n not in neighbors_of_other_neighbors_but_not_n:
-            #         discard = False
-            #         break
-
-            # has to be at least one level1 neighbour, whose neighbours (level2) include all other level 1 neighbours.
-            for n in all_neighbors:
-                # all_neighbors - {n} # all other level 1 neighbours
-                # n_neighbors = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary} # neighbots of n
-                n_neighbors = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
-                must_have = all_neighbors - {n}
-                if n_neighbors.intersection(must_have) == must_have:
-                    discard = True
-
-            if discard:
-                boundary.discard((x, y))
-
-        return boundary
-
-    def remove_sharp_corners4(self, boundary, na, step=0.125):
-        boundary_copy = boundary.copy()
-        # for (x, y) in boundary_copy:
-        #     all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
-        #
-        #     for n in all_neighbors:
-        #         all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
-        #         if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
-        #             boundary.discard((x, y))
-        #             #print("discarded: ", (x, y))
-
-        to_discard = set()
-        for (x, y) in boundary:
-            # if we have a point to the right or to the left of this one and also one above or below,
-            # then this is a sharp corner, which we want to remove.
-            # But we want to do that only if we don't exterminate valid paths between points. Therefore we
-            # will only remove a point if all its reachable neighbours remain connected.
-            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
-            if len(all_neighbors) < 3: continue
-            all_neighbors_neighbours = {na.apply(n[0], n[1], move)
-                                        for move in na.MOVE_MOVES
-                                        for n in all_neighbors
-                                        if na.apply(n[0], n[1], move) in boundary}
-
-            boundary_copy.discard((x, y))
-            #all_neighbors_after_discard = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary_copy}
-            all_neighbors_neighbours_after_discard = {na.apply(n[0], n[1], move)
-                                        for move in na.MOVE_MOVES
-                                        for n in all_neighbors
-                                        if na.apply(n[0], n[1], move) in boundary_copy}
-
-            all_neighbors_neighbours.discard((x, y))
-
-            if all_neighbors_neighbours_after_discard == all_neighbors_neighbours:
-                to_discard.add((x, y))
-                print("discarded: ", (x, y))
-            else:
-                boundary_copy.add((x, y))
-
-        return boundary - to_discard
-
-    def remove_sharp_corners5(self, boundary, na, step=0.125):
-        boundary_copy = boundary.copy()
-        to_discard = set()
-        for (x, y) in boundary:
-            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary_copy}
-            this_point_discard_decisions = []
-            for n in all_neighbors:
-                step1_points = {na.apply(n[0], n[1], move)
-                                        for move in na.MOVE_MOVES
-                                        if na.apply(n[0], n[1], move) in boundary_copy}
-
-                # step2_points = {na.apply(point[0], point[1], move)
-                #                         for move in na.MOVE_MOVES
-                #                         for point in step1_points
-                #                         if na.apply(n[0], n[1], move) in boundary}
-                step2_points = set()
-
-                for point in step1_points:
-                    # if x == y:
-                    #     print("Step2 update at ", point, " : ", {na.apply(point[0], point[1], move)
-                    #                     for move in na.MOVE_MOVES
-                    #                     if na.apply(point[0], point[1], move) in boundary})
-                    step2_points.update({na.apply(point[0], point[1], move)
-                                    for move in na.MOVE_MOVES
-                                    if na.apply(point[0], point[1], move) in boundary_copy})
-
-                boundary_copy.discard((x, y))
-
-                step1_points_after_discard = {na.apply(n[0], n[1], move)
-                                for move in na.MOVE_MOVES
-                                if na.apply(n[0], n[1], move) in boundary_copy}
-
-                step2_points_after_discard = set()
-
-                for point in step1_points_after_discard:
-                    step2_points_after_discard.update({na.apply(point[0], point[1], move)
-                                    for move in na.MOVE_MOVES
-                                    if na.apply(point[0], point[1], move) in boundary_copy})
-
-                # step2_points_after_discard = {na.apply(point[0], point[1], move)
-                #                 for move in na.MOVE_MOVES
-                #                 for point in step1_points_after_discard
-                #                 if na.apply(n[0], n[1], move) in boundary_copy}
-
-                # if x==y:
-                #     print("(x, y)", (x, y))
-                #     print("step1_points: ", step1_points)
-                #     print("step2_points: ", step2_points)
-                #
-                #     print("step1_points_after_discard: ", step1_points_after_discard)
-                #     print("step2_points_after_discard: ", step2_points_after_discard)
-
-                before_discard = step1_points.union(step2_points) - {(x, y)}
-                after_discard = step1_points_after_discard.union(step2_points_after_discard)
-
-                if before_discard == after_discard:
-                    #to_discard.add((x, y))
-                    #print("discarded: ", (x, y))
-                    this_point_discard_decisions.append(True)
-                else:
-                    this_point_discard_decisions.append(False)
-                    #boundary_copy.add((x, y))
-                    break
-
-            if all(this_point_discard_decisions):
-                to_discard.add((x, y))
-            else:
-                boundary_copy.add((x, y))
-        print("to_discard: ", to_discard)
-
-        return boundary - to_discard
 
     def remove_redundant_points(self, boundary, na, step=0.125):
         '''
@@ -780,51 +525,9 @@ class BoundaryCalculations:
                 to_discard.add((x, y))
             else:
                 boundary_copy.add((x, y))
-        print("to_discard: ", to_discard)
+        #print("to_discard: ", to_discard)
 
         return boundary - to_discard
-
-    def remove_sharp_corners3(self, boundary, na, step=0.125):
-        boundary_copy = boundary.copy()
-        for (x, y) in boundary_copy:
-            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
-
-            for n in all_neighbors:
-                all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
-                if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
-                    boundary.discard((x, y))
-                    #print("discarded: ", (x, y))
-
-        return boundary
-
-    def remove_sharp_corners2(self, boundary, na, step=0.125):
-        boundary_copy = boundary.copy()
-        # for (x, y) in boundary_copy:
-        #     all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
-        #
-        #     for n in all_neighbors:
-        #         all_neighbors_neighbours = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
-        #         if all_neighbors_neighbours.intersection(all_neighbors - {n}) == all_neighbors - {n}:
-        #             boundary.discard((x, y))
-        #             #print("discarded: ", (x, y))
-
-        for (x, y) in boundary_copy:
-            # if we have a point to the right or to the left of this one and also one above or below,
-            # then this is a sharp corner, which we want to remove.
-            # But we want to do that only if we don't exterminate valid paths between points. Therefore we
-            # will only remove a point if all its reachable neighbours remain connected.
-            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary}
-
-            all_reachable_points_from_all_neighbours = set()
-            for n in all_neighbors:
-                reachable_points_from_n = {na.apply(n[0], n[1], move) for move in na.MOVE_MOVES if na.apply(n[0], n[1], move) in boundary}
-                all_reachable_points_from_all_neighbours.update(reachable_points_from_n)
-
-            if all_reachable_points_from_all_neighbours.intersection(all_neighbors) == all_neighbors:
-                boundary.discard((x, y))
-                print("discarded: ", (x, y), " all_reachable_points_from_all_neighbours: ", all_reachable_points_from_all_neighbours, " all_neighbors: ", all_neighbors)
-
-        return boundary
 
     def find_room_perimeter_path(self, reachable_room_points, unreachable_room_points, room_of_placement, house):
         # First let's establish the boundaries between walkable and non-walkable locations in the room
@@ -833,36 +536,9 @@ class BoundaryCalculations:
 
         boundary_points = self.get_room_perimeter_points_1st_pass(reachable_room_points, unreachable_room_points,
                                                                 room_of_placement, self.na)
-        # Now we have to detect boundaries that are very near each other, because those are a nightmare to handle.
-        # They effectively are 1 path anyway, but for an algorithm it becomes like a many possible turning points
-        # switching between one boundary and another. It's best to remove them, so first we will get removal
-        # candidates- all such double boundaries.
-        removal_candidates, filtered_points = self.filter_double_boundaries(boundary_points)
-        # I've written processing routines for vertical ones, so to process horizontal double boundaries,
-        # let's turn them by 90 degrees.
-        removal_candidates_90_deg = {(el[1], el[0]) for el in removal_candidates}
-        # Now the way we are going to fix these double boundaries, is by removing one of them and keeping end
-        # parts of both of them. So it's a bit like a narrow rectangle, from which we want to remove one long edge
-        # and keep the other one and also keep both short edges. That's why we're finding rectangles here. Both
-        # horizontal and vertical rectangles.
-        rects_vert, single_edge_vertices_vert = self.find_rectangles(removal_candidates)
-        rects_horiz, single_edge_vertices_horiz = self.find_rectangles(removal_candidates_90_deg)
-        rects_horiz = {(el[1], el[0]) for el in rects_horiz} # restore rotation for the horizontal rectangles
-        # find the single long edge to remove
-        single_edge_vertices_horiz = {(el[1], el[0]) for el in single_edge_vertices_horiz}
 
-        # Now just simple set arithmetic- take the removal candidates and split away from them the short edges of the
-        # rectangles and also one of the long edges.
-        removal_candidates = removal_candidates - rects_vert - rects_horiz - single_edge_vertices_vert - single_edge_vertices_horiz
-
-        # Now split away the removal candidates from the boundary point set and we have the boundary that we
-        # can process further.
-        boundary_points = boundary_points - removal_candidates
-
-        # Every sharp corner works as at least two paths instead of 1 (properly around the corner and a diagonal
-        # shortcut). The extra paths are not interesting, but for the algorithm they will create a roughly exponential
-        # complexity (1 corner- 2 paths, 4 corners- 16 paths, and so on- and that's only with 2 paths per corner).
-        boundary_points = self.remove_sharp_corners(boundary_points, self.na)
+        # Remove redundant points
+        boundary_points = self.remove_redundant_points(boundary_points, self.na)
 
         # Finally, take the optimized bounadries and find the biggest polygon that can be detected between them-
         # that's the floor perimeter that we want.
@@ -981,51 +657,48 @@ class BoundaryCalculations:
         points = {(float(p[0]), float(p[1])) for p in points}
         return points
 
-
 if __name__ == "__main__":
     bc = BoundaryCalculations()
     #
-    # # obstacl close to boundary
-    # # reachable_positions = bc.create_grid_points_product(0.25, 1.25, 0.25, 1.25)
-    # # unreachable_positions = bc.create_grid_points_product(0.0, 1.50, 0.0, 1.50)
-    # # obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
-    # #              (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
-    # #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
-    # #room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.25), (1.25, 1.25), (1.25, 0.25)], Point(0.5, 0.5))
-    #
-    # # obstacle further from boundary
-    # reachable_positions = bc.create_grid_points_product(0.25, 1.50, 0.25, 1.50)
-    # unreachable_positions = bc.create_grid_points_product(0.0, 2.00, 0.0, 2.00)
+    # obstacl close to boundary
+    # reachable_positions = bc.create_grid_points_product(0.25, 1.25, 0.25, 1.25)
+    # unreachable_positions = bc.create_grid_points_product(0.0, 1.50, 0.0, 1.50)
     # obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
     #              (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
-    #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75),}
-    #      #        (0.25, 0.25), (1.25, 1.25), (0.25, 1.25), (1.25, 0.25)}
-    #
-    # # print(reachable_positions)
-    # # exit()
-    # reachable_positions = reachable_positions - obstacles
-    # unreachable_positions = unreachable_positions - reachable_positions
-    # #print(reachable_positions)
-    # #print(unreachable_positions)
-    # room_of_placement = ('LivingRoom', [(0.125, 0.125), (0.125, 1.38), (1.38, 1.38), (1.38, 0.125)], Point(0.5, 0.5))
-    #
-    # boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
-    # print("boundary_points")
-    # bc.visualize(boundary_points) #1
-    #
-    # boundary_points = bc.remove_sharp_corners5(boundary_points, bc.na)
-    # print("boundary_points without sharps")
-    # bc.visualize(boundary_points) #1
-    #
-    # separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
-    # print("boundary count: ", len(separated_boundaries))
-    # bc.visualize(separated_boundaries[-1])
-    # # for b in separated_boundaries:
-    # #     bc.visualize(b)
-    #
+    #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
+    #room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.25), (1.25, 1.25), (1.25, 0.25)], Point(0.5, 0.5))
+
+    # obstacle further from boundary
+    reachable_positions = bc.create_grid_points_product(0.25, 1.50, 0.25, 1.50)
+    unreachable_positions = bc.create_grid_points_product(0.0, 2.00, 0.0, 2.00)
+    obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
+                 (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
+                 (0.38, 0.88), (0.5, 0.75), (0.38, 0.75),}
+         #        (0.25, 0.25), (1.25, 1.25), (0.25, 1.25), (1.25, 0.25)}
+
+    # print(reachable_positions)
     # exit()
+    reachable_positions = reachable_positions - obstacles
+    unreachable_positions = unreachable_positions - reachable_positions
+    #print(reachable_positions)
+    #print(unreachable_positions)
+    room_of_placement = ('LivingRoom', [(0.125, 0.125), (0.125, 1.38), (1.38, 1.38), (1.38, 0.125)], Point(0.5, 0.5))
 
+    boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
+    print("boundary_points")
+    bc.visualize(boundary_points) #1
 
+    boundary_points = bc.remove_redundant_points(boundary_points, bc.na)
+    print("boundary_points without sharps")
+    bc.visualize(boundary_points) #1
+
+    separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
+    print("boundary count: ", len(separated_boundaries))
+    bc.visualize(separated_boundaries[-1])
+    # for b in separated_boundaries:
+    #     bc.visualize(b)
+
+    exit()
 
     with open("/home/hp20024/robotics/latent_planning/procthor-10k/house1.jsonl", "r") as f:
         house = json.load(f)

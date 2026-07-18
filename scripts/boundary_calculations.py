@@ -667,6 +667,85 @@ class BoundaryCalculations:
 
         return boundary - to_discard
 
+    def remove_sharp_corners6(self, boundary, na, step=0.125):
+        boundary_copy = boundary.copy()
+        to_discard = set()
+        for (x, y) in boundary:
+            all_neighbors = {na.apply(x, y, move) for move in na.MOVE_MOVES if na.apply(x, y, move) in boundary_copy}
+            this_point_discard_decisions = []
+            for n in all_neighbors:
+                step1_points = {na.apply(n[0], n[1], move)
+                                        for move in na.MOVE_MOVES
+                                        if na.apply(n[0], n[1], move) in boundary_copy}
+
+                # step2_points = {na.apply(point[0], point[1], move)
+                #                         for move in na.MOVE_MOVES
+                #                         for point in step1_points
+                #                         if na.apply(n[0], n[1], move) in boundary}
+                step2_points = set()
+
+                for point in step1_points:
+                    # if x == y:
+                    #     print("Step2 update at ", point, " : ", {na.apply(point[0], point[1], move)
+                    #                     for move in na.MOVE_MOVES
+                    #                     if na.apply(point[0], point[1], move) in boundary})
+                    step2_points.update({na.apply(point[0], point[1], move)
+                                    for move in na.MOVE_MOVES
+                                    if na.apply(point[0], point[1], move) in boundary_copy})
+
+                boundary_copy.discard((x, y))
+
+                step1_points_after_discard = {na.apply(n[0], n[1], move)
+                                for move in na.MOVE_MOVES
+                                if na.apply(n[0], n[1], move) in boundary_copy}
+
+                step2_points_after_discard = set()
+
+                for point in step1_points_after_discard:
+                    step2_points_after_discard.update({na.apply(point[0], point[1], move)
+                                    for move in na.MOVE_MOVES
+                                    if na.apply(point[0], point[1], move) in boundary_copy})
+
+                step3_points_after_discard = set()
+
+                for point in step2_points_after_discard:
+                    step3_points_after_discard.update({na.apply(point[0], point[1], move)
+                                    for move in na.MOVE_MOVES
+                                    if na.apply(point[0], point[1], move) in boundary_copy})
+
+                # step2_points_after_discard = {na.apply(point[0], point[1], move)
+                #                 for move in na.MOVE_MOVES
+                #                 for point in step1_points_after_discard
+                #                 if na.apply(n[0], n[1], move) in boundary_copy}
+
+                # if x==y:
+                #     print("(x, y)", (x, y))
+                #     print("step1_points: ", step1_points)
+                #     print("step2_points: ", step2_points)
+                #
+                #     print("step1_points_after_discard: ", step1_points_after_discard)
+                #     print("step2_points_after_discard: ", step2_points_after_discard)
+
+                before_discard = step1_points.union(step2_points) - {(x, y)}
+                after_discard = step1_points_after_discard.union(step2_points_after_discard).union(step3_points_after_discard)
+
+                if after_discard.intersection(before_discard) == before_discard:
+                    #to_discard.add((x, y))
+                    #print("discarded: ", (x, y))
+                    this_point_discard_decisions.append(True)
+                else:
+                    this_point_discard_decisions.append(False)
+                    #boundary_copy.add((x, y))
+                    break
+
+            if all(this_point_discard_decisions):
+                to_discard.add((x, y))
+            else:
+                boundary_copy.add((x, y))
+        print("to_discard: ", to_discard)
+
+        return boundary - to_discard
+
     def remove_sharp_corners3(self, boundary, na, step=0.125):
         boundary_copy = boundary.copy()
         for (x, y) in boundary_copy:
@@ -955,7 +1034,7 @@ if __name__ == "__main__":
 
     #boundary_points = boundary_points - removal_candidates
 
-    boundary_points = bc.remove_sharp_corners5(boundary_points, bc.na)
+    boundary_points = bc.remove_sharp_corners6(boundary_points, bc.na)
     print("boundary_points with no sharps")
     bc.visualize(boundary_points)
 

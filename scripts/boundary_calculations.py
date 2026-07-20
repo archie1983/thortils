@@ -1,6 +1,5 @@
 import json, math, itertools
 
-from networkx.classes import all_neighbors
 from shapely.ops import unary_union
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
@@ -102,8 +101,8 @@ class BoundaryCalculations:
                     new_x, new_y = na.apply(cbp[0], cbp[1], move)
                     # count how many other boundary points we can see from this one
 
-                    if current_sub_boundary + [(new_x, new_y)] in all_explored_sub_boundaries:
-                        print("FILTERD SUB Boundary")
+                    # if current_sub_boundary + [(new_x, new_y)] in all_explored_sub_boundaries:
+                    #     print("FILTERD SUB Boundary")
 
                     if ((new_x, new_y) in boundary_points and # only proceed if the point is whithin accessible points
                         cbp_prev != (new_x, new_y) and # and we're not going backwards

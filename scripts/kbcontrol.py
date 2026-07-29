@@ -615,8 +615,11 @@ def main(init_func=None, step_func=None):
             # exit()
             boundary_points = bc.find_room_perimeter_path(reachable_positions, unreachable_positions, room_of_placement, house)
 
+            looking_at = bc.boundary_point_looking_at(boundary_points, cur_pos)
+            print("cur_pos: ", cur_pos, " looking_at: ", looking_at)
+
             # Visualize path and obstructed space
-            atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
+            atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, ((looking_at[0], 0, looking_at[1]), (0,0,0)), dest,
                                show_unreachable_pos = False,
                                show_reachable_pos = False)
             # atu.visualise_path2(separated_boundaries[-1], reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,

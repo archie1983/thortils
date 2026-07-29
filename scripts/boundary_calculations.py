@@ -1,7 +1,7 @@
 import json, math, itertools
 
 from shapely.ops import unary_union
-from shapely.geometry import Point
+from shapely.geometry import Point, LineString
 from shapely.geometry.polygon import Polygon
 from shapely.prepared import prep
 from scipy.spatial import KDTree
@@ -656,48 +656,210 @@ class BoundaryCalculations:
         points = {(float(p[0]), float(p[1])) for p in points}
         return points
 
+    def find_first_boundary_point(self, agent_pos, heading_angle, boundary_polygon, max_distance=10.0):
+        """
+        Find the first boundary point the agent sees when looking in a given direction.
+
+        Args:
+            agent_pos: (x, y) tuple of agent position
+            heading_angle: angle in radians (0 = right, π/2 = up, etc.)
+            boundary_polygon: Shapely Polygon object of the room boundary
+            max_distance: maximum distance to check (prevents infinite loops)
+
+        Returns:
+            (x, y) tuple of the first boundary point, or None if no boundary found
+        """
+        # convert heading angle from compass convention to standard math convention
+        heading_angle = -math.radians(heading_angle) + math.pi / 2.0
+
+        # Convert heading angle to direction vector
+        dx = math.cos(heading_angle)
+        dy = math.sin(heading_angle)
+
+        # Create a ray starting from agent position
+        ray_start = Point(agent_pos[0], agent_pos[1])
+        ray_end = Point(agent_pos[0] + dx * max_distance,
+                        agent_pos[1] + dy * max_distance)
+
+        # Create the ray as a LineString
+        ray = LineString([ray_start, ray_end])
+
+        # Find intersection points with the boundary polygon
+        # (the boundary is the exterior ring of the polygon)
+        boundary_ring = boundary_polygon.exterior
+
+        # Get intersection points
+        intersection = ray.intersection(boundary_ring)
+
+        if intersection.is_empty:
+            # No intersection found within max_distance
+            # Try extending the ray further
+            ray_end = Point(agent_pos[0] + dx * 100.0,
+                            agent_pos[1] + dy * 100.0)
+            ray = LineString([ray_start, ray_end])
+            intersection = ray.intersection(boundary_ring)
+
+            if intersection.is_empty:
+                #return None
+                print("Normal lookup failed!!!")
+                return self.find_boundary_point_by_sampling(agent_pos, heading_angle, boundary_polygon)
+
+        # Extract the closest intersection point to the agent
+        if intersection.geom_type == 'Point':
+            # Single intersection point
+            print("Normal lookup Point...")
+            return (intersection.x, intersection.y)
+        elif intersection.geom_type == 'MultiPoint':
+            # Multiple intersection points (e.g., the ray goes through a doorway)
+            # Find the closest one
+            points = list(intersection.geoms)
+            closest = min(points, key=lambda p: p.distance(ray_start))
+            print("Normal lookup MultiPoint...")
+            return (closest.x, closest.y)
+        elif intersection.geom_type == 'LineString':
+            # Rare: ray follows boundary exactly
+            # Return the midpoint of the overlapped segment
+            mid = intersection.interpolate(0.5, normalized=True)
+            print("Normal lookup LineString...")
+            return (mid.x, mid.y)
+        else:
+            # MultiPoint...
+            print("Normal lookup failed: ", intersection.geom_type, intersection)
+            return self.find_boundary_point_by_sampling(agent_pos, heading_angle, boundary_polygon)
+            #return None
+
+    def boundary_point_looking_at(self, room_boundary, agent_pos_with_rtn):
+        room_boundary_poly = Polygon(room_boundary)
+        agent_x = agent_pos_with_rtn[0][0]
+        agent_y = agent_pos_with_rtn[0][2]
+
+        print("WITHIN BOUNDS: ", room_boundary_poly.contains(Point(agent_x, agent_y)))
+
+        agent_rtn = agent_pos_with_rtn[1][1]
+        looking_at = self.find_first_boundary_point((agent_x, agent_y), agent_rtn, room_boundary_poly)
+        if looking_at is not None:
+            #print("looking_at: ", looking_at)
+            # now find the closest point on the boundary that matches the look_at point
+            looking_at = min([(self.euclidean_dist(p, looking_at), p) for p in room_boundary], key=lambda el: el[0])
+            looking_at = looking_at[1]
+            #print("looking_at: ", looking_at)
+        return looking_at
+
+
+    def find_boundary_point_by_sampling(self, agent_pos, heading_angle, boundary_polygon, num_samples=360):
+        """
+        Fallback method: sample points around the boundary and find the closest visible one.
+        """
+        # Get all boundary points
+        boundary_points = list(boundary_polygon.exterior.coords)
+
+        # Remove the last point (it's a duplicate of the first)
+        boundary_points = boundary_points[:-1]
+
+        # Create a ray direction
+        dx = math.cos(heading_angle)
+        dy = math.sin(heading_angle)
+
+        best_point = None
+        best_distance = float('inf')
+
+        for point in boundary_points:
+            # Vector from agent to this boundary point
+            vx = point[0] - agent_pos[0]
+            vy = point[1] - agent_pos[1]
+
+            # Check if this point is in the viewing direction (dot product > 0)
+            dot = vx * dx + vy * dy
+            if dot > 0:
+                # Distance to point
+                dist = math.sqrt(vx ** 2 + vy ** 2)
+
+                # Check if there's a straight line of sight
+                if self.has_line_of_sight(agent_pos, point, boundary_polygon):
+                    if dist < best_distance:
+                        best_distance = dist
+                        best_point = point
+
+        return best_point
+
+
+    def has_line_of_sight(self, pos1, pos2, polygon, margin=0.01):
+        """
+        Check if there's a straight line of sight between two points
+        (i.e., the line doesn't intersect the polygon interior).
+        """
+        line = LineString([pos1, pos2])
+
+        # Check if the line intersects the polygon's interior
+        # We want to see if the line stays inside the polygon
+        # So we check if the line is completely contained in the polygon
+        if polygon.contains(line):
+            return True
+
+        # Check if the line only touches the boundary at the start/end
+        intersection = line.intersection(polygon.boundary)
+
+        if intersection.is_empty:
+            return True
+
+        # If the only intersections are at the start and end points, it's valid
+        points = []
+        if intersection.geom_type == 'Point':
+            points = [intersection]
+        elif intersection.geom_type == 'MultiPoint':
+            points = list(intersection.geoms)
+        else:
+            return False
+
+        # Check if all intersection points are at the start or end
+        for p in points:
+            if p.distance(Point(pos1)) > margin and p.distance(Point(pos2)) > margin:
+                return False
+
+        return True
+
 if __name__ == "__main__":
     bc = BoundaryCalculations()
+    # #
+    # # obstacl close to boundary
+    # # reachable_positions = bc.create_grid_points_product(0.25, 1.25, 0.25, 1.25)
+    # # unreachable_positions = bc.create_grid_points_product(0.0, 1.50, 0.0, 1.50)
+    # # obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
+    # #              (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
+    # #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
+    # #room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.25), (1.25, 1.25), (1.25, 0.25)], Point(0.5, 0.5))
     #
-    # obstacl close to boundary
-    # reachable_positions = bc.create_grid_points_product(0.25, 1.25, 0.25, 1.25)
-    # unreachable_positions = bc.create_grid_points_product(0.0, 1.50, 0.0, 1.50)
+    # # obstacle further from boundary
+    # reachable_positions = bc.create_grid_points_product(0.25, 1.50, 0.25, 1.50)
+    # unreachable_positions = bc.create_grid_points_product(0.0, 2.00, 0.0, 2.00)
     # obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
     #              (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
-    #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75)}
-    #room_of_placement = ('LivingRoom', [(0.25, 0.25), (0.25, 1.25), (1.25, 1.25), (1.25, 0.25)], Point(0.5, 0.5))
-
-    # obstacle further from boundary
-    reachable_positions = bc.create_grid_points_product(0.25, 1.50, 0.25, 1.50)
-    unreachable_positions = bc.create_grid_points_product(0.0, 2.00, 0.0, 2.00)
-    obstacles = {(0.38, 0.62), (0.5, 0.62), (0.62, 0.62),
-                 (0.62, 0.75), (0.62, 0.88), (0.5, 0.88),
-                 (0.38, 0.88), (0.5, 0.75), (0.38, 0.75),}
-         #        (0.25, 0.25), (1.25, 1.25), (0.25, 1.25), (1.25, 0.25)}
-
-    # print(reachable_positions)
+    #              (0.38, 0.88), (0.5, 0.75), (0.38, 0.75),}
+    #      #        (0.25, 0.25), (1.25, 1.25), (0.25, 1.25), (1.25, 0.25)}
+    #
+    # # print(reachable_positions)
+    # # exit()
+    # reachable_positions = reachable_positions - obstacles
+    # unreachable_positions = unreachable_positions - reachable_positions
+    # #print(reachable_positions)
+    # #print(unreachable_positions)
+    # room_of_placement = ('LivingRoom', [(0.125, 0.125), (0.125, 1.38), (1.38, 1.38), (1.38, 0.125)], Point(0.5, 0.5))
+    #
+    # boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
+    # print("boundary_points")
+    # bc.visualize(boundary_points) #1
+    #
+    # boundary_points = bc.remove_redundant_points(boundary_points, bc.na)
+    # print("boundary_points without sharps")
+    # bc.visualize(boundary_points) #1
+    #
+    # separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
+    # print("boundary count: ", len(separated_boundaries))
+    # bc.visualize(separated_boundaries[-1])
+    # # for b in separated_boundaries:
+    # #     bc.visualize(b)
+    #
     # exit()
-    reachable_positions = reachable_positions - obstacles
-    unreachable_positions = unreachable_positions - reachable_positions
-    #print(reachable_positions)
-    #print(unreachable_positions)
-    room_of_placement = ('LivingRoom', [(0.125, 0.125), (0.125, 1.38), (1.38, 1.38), (1.38, 0.125)], Point(0.5, 0.5))
-
-    boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
-    print("boundary_points")
-    bc.visualize(boundary_points) #1
-
-    boundary_points = bc.remove_redundant_points(boundary_points, bc.na)
-    print("boundary_points without sharps")
-    bc.visualize(boundary_points) #1
-
-    separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
-    print("boundary count: ", len(separated_boundaries))
-    bc.visualize(separated_boundaries[-1])
-    # for b in separated_boundaries:
-    #     bc.visualize(b)
-
-    exit()
 
     with open("/home/hp20024/robotics/latent_planning/procthor-10k/house1.jsonl", "r") as f:
         house = json.load(f)
@@ -718,35 +880,35 @@ if __name__ == "__main__":
 
     boundary_points = bc.get_room_perimeter_points_1st_pass(reachable_positions, unreachable_positions, room_of_placement, bc.na)
 
-    print("boundary_points")
-    bc.visualize(boundary_points) #1
-    removal_candidates, filtered_points = bc.filter_double_boundaries(boundary_points)
-    removal_candidates_90_deg = {(el[1], el[0]) for el in removal_candidates}
-    print("removal_candidates")
-    bc.visualize(removal_candidates) #2
-
-    print("filtered_points")
-    bc.visualize(filtered_points) #3
-    rects_vert, single_edge_vertices_vert = bc.find_rectangles(removal_candidates)
-    rects_horiz, single_edge_vertices_horiz = bc.find_rectangles(removal_candidates_90_deg)
-    rects_horiz = {(el[1], el[0]) for el in rects_horiz}
-    single_edge_vertices_horiz = {(el[1], el[0]) for el in single_edge_vertices_horiz}
-
-    print("rects_vert.union(rects_horiz).union(single_edge_vertices_vert).union(single_edge_vertices_horiz)")
-    bc.visualize(rects_vert.union(rects_horiz).union(single_edge_vertices_vert).union(single_edge_vertices_horiz)) #4
-
-    # put back in the beginnings and endings of rectangles
-    filtered_points = filtered_points.union(rects_vert).union(rects_horiz).union(single_edge_vertices_vert).union(single_edge_vertices_horiz)
-    print("filtered_points with rects back")
-    bc.visualize(filtered_points)
-
-    removal_candidates = removal_candidates - rects_vert - rects_horiz - single_edge_vertices_vert - single_edge_vertices_horiz
-
-    #boundary_points = boundary_points - removal_candidates
+    # print("boundary_points")
+    # bc.visualize(boundary_points) #1
+    # removal_candidates, filtered_points = bc.filter_double_boundaries(boundary_points)
+    # removal_candidates_90_deg = {(el[1], el[0]) for el in removal_candidates}
+    # print("removal_candidates")
+    # bc.visualize(removal_candidates) #2
+    #
+    # print("filtered_points")
+    # bc.visualize(filtered_points) #3
+    # rects_vert, single_edge_vertices_vert = bc.find_rectangles(removal_candidates)
+    # rects_horiz, single_edge_vertices_horiz = bc.find_rectangles(removal_candidates_90_deg)
+    # rects_horiz = {(el[1], el[0]) for el in rects_horiz}
+    # single_edge_vertices_horiz = {(el[1], el[0]) for el in single_edge_vertices_horiz}
+    #
+    # print("rects_vert.union(rects_horiz).union(single_edge_vertices_vert).union(single_edge_vertices_horiz)")
+    # bc.visualize(rects_vert.union(rects_horiz).union(single_edge_vertices_vert).union(single_edge_vertices_horiz)) #4
+    #
+    # # put back in the beginnings and endings of rectangles
+    # filtered_points = filtered_points.union(rects_vert).union(rects_horiz).union(single_edge_vertices_vert).union(single_edge_vertices_horiz)
+    # print("filtered_points with rects back")
+    # bc.visualize(filtered_points)
+    #
+    # removal_candidates = removal_candidates - rects_vert - rects_horiz - single_edge_vertices_vert - single_edge_vertices_horiz
+    #
+    # #boundary_points = boundary_points - removal_candidates
 
     boundary_points = bc.remove_redundant_points(boundary_points, bc.na)
     print("boundary_points with no sharps")
-    bc.visualize(boundary_points)
+    #bc.visualize(boundary_points)
 
     separated_boundaries = bc.get_room_perimeter_points_2nd_pass(boundary_points, bc.na)
     print("boundary count: ", len(separated_boundaries))
@@ -754,11 +916,19 @@ if __name__ == "__main__":
 
     #removal_candidates = {(6.25, 3.12), (5.5, 0.38), (5.88, 3.25), (6.0, 3.12), (5.62, 0.38), (5.5, 0.5), (5.5, 0.25), (5.5, 0.62), (6.25, 3.25), (6.12, 3.12), (5.62, 0.25), (5.62, 0.62), (6.0, 3.25), (5.88, 3.12), (6.12, 3.25), (5.62, 0.5)}
     print("boundary_points - removal_candidates + rects_vert + rects_horiz")
-    bc.visualize(boundary_points)
+    #bc.visualize(boundary_points)
+
+    room_boundary = separated_boundaries[-1]
+    room_boundary_poly = Polygon(room_boundary)
+    looking_at = bc.find_first_boundary_point((6.907, 6.908), -math.radians(135) + math.pi / 2.0, room_boundary_poly)
+    print("looking_at: ", looking_at)
+    # now find the closest point on the boundary that matches the look_at point
+    looking_at = min([(bc.euclidean_dist(p, looking_at), p) for p in room_boundary], key=lambda el: el[0])
+    looking_at = looking_at[1]
+    print("looking_at: ", looking_at)
+
 
     print("separated_boundaries[-1]")
-    bc.visualize(separated_boundaries[-1])
+    bc.visualize(separated_boundaries[-1], {looking_at, (6.907, 6.908)})
     # for b in separated_boundaries:
     #     bc.visualize(b)
-
-    #print("rects_horiz: ", rects_horiz)

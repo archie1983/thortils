@@ -615,21 +615,22 @@ def main(init_func=None, step_func=None):
             # exit()
             boundary_points = bc.find_room_perimeter_path(reachable_positions, unreachable_positions, room_of_placement, house)
 
-            looking_at = bc.boundary_point_looking_at(boundary_points, cur_pos)
+            looking_at = bc.get_target_boundary_point(boundary_points, place_with_rtn)
             print("cur_pos: ", cur_pos, " looking_at: ", looking_at)
 
-            # Visualize path and obstructed space
-            atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, ((looking_at[0], 0, looking_at[1]), (0,0,0)), dest,
-                               show_unreachable_pos = False,
-                               show_reachable_pos = False)
-            # atu.visualise_path2(separated_boundaries[-1], reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
-            #                    show_unreachable_pos = False,
-            #                    show_reachable_pos = False)
-            # for sb in separated_boundaries:
-            #     atu.visualise_path2(sb, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
-            #                        show_unreachable_pos = False,
-            #                        show_reachable_pos = False)
-            #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
+            if looking_at is not None:
+                # Visualize path and obstructed space
+                atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, ((looking_at[0], 0, looking_at[1]), (0,0,0)), dest,
+                                   show_unreachable_pos = False,
+                                   show_reachable_pos = False)
+                # atu.visualise_path2(separated_boundaries[-1], reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
+                #                    show_unreachable_pos = False,
+                #                    show_reachable_pos = False)
+                # for sb in separated_boundaries:
+                #     atu.visualise_path2(sb, reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
+                #                        show_unreachable_pos = False,
+                #                        show_reachable_pos = False)
+                #atu.visualise_path2(cur_path, reachable_positions, buf_unreachable_pos, rooms_in_habitat, start, dest, show_unreachable_pos=True)
 
 if __name__ == "__main__":
     main()

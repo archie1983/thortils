@@ -704,6 +704,9 @@ class BoundaryCalculations:
                 print("Normal lookup failed!!!")
                 return self.find_boundary_point_by_sampling(agent_pos, heading_angle, boundary_polygon)
 
+        # Handle different geometry types
+        points_to_check = []
+
         # Extract the closest intersection point to the agent
         if intersection.geom_type == 'Point':
             # Single intersection point
@@ -818,6 +821,140 @@ class BoundaryCalculations:
 
         return True
 
+    def find_furthest_boundary_point(self, agent_pos, heading_angle, boundary_polygon, max_distance=10.0):
+        """
+        Find the furthest boundary point in the direction the agent is looking.
+        This is useful for perimeter navigation where we want to go to the outer wall,
+        not obstacles in the way.
+        """
+        dx = math.cos(heading_angle)
+        dy = math.sin(heading_angle)
+
+        # Sample points along the ray at small intervals
+        step = 0.05  # Small step size for accuracy
+        num_steps = int(max_distance / step)
+
+        boundary_points = list(boundary_polygon.exterior.coords)[:-1]
+        boundary_set = set(boundary_points)
+
+        furthest_point = None
+        furthest_distance = -1
+
+        for i in range(num_steps):
+            distance = i * step
+            x = agent_pos[0] + dx * distance
+            y = agent_pos[1] + dy * distance
+
+            # Round to grid resolution to match boundary points
+            x_rounded = round(x, 2)
+            y_rounded = round(y, 2)
+
+            # check if we are sufficiently close to a boundary point
+            if min([self.euclidean_dist(p, (x_rounded, y_rounded)) for p in boundary_set]) < step:
+            #if (x_rounded, y_rounded) in boundary_set:
+                # This is a boundary point. Keep the furthest one.
+                if distance > furthest_distance:
+                    furthest_distance = distance
+                    furthest_point = (x_rounded, y_rounded)
+
+        return furthest_point
+
+    def find_furthest_boundary_point_raycast(self, agent_pos, heading_angle, boundary_polygon, max_distance=10.0):
+        """
+        Find the furthest boundary point in the direction the agent is looking.
+        Uses ray casting and handles GeometryCollection and MultiPoint correctly.
+        """
+        dx = math.cos(heading_angle)
+        dy = math.sin(heading_angle)
+
+        ray_start = Point(agent_pos[0], agent_pos[1])
+        ray_end = Point(agent_pos[0] + dx * max_distance,
+                        agent_pos[1] + dy * max_distance)
+
+        ray = LineString([ray_start, ray_end])
+        boundary_ring = boundary_polygon.exterior
+
+        intersection = ray.intersection(boundary_ring)
+
+        if intersection.is_empty:
+            # Try extending the ray further
+            ray_end = Point(agent_pos[0] + dx * 100.0,
+                            agent_pos[1] + dy * 100.0)
+            ray = LineString([ray_start, ray_end])
+            intersection = ray.intersection(boundary_ring)
+
+            if intersection.is_empty:
+                return None
+
+        # Helper function to extract points from a geometry
+        def extract_points(geom):
+            """Recursively extract all points from a geometry."""
+            points = []
+
+            if geom.geom_type == 'Point':
+                points.append(geom)
+            elif geom.geom_type == 'MultiPoint':
+                points.extend(list(geom.geoms))
+            elif geom.geom_type in ['LineString', 'LinearRing']:
+                # Check if boundary is a MultiPoint and extract its points
+                boundary = geom.boundary
+                if boundary.geom_type == 'MultiPoint':
+                    points.extend(list(boundary.geoms))
+                elif boundary.geom_type == 'Point':
+                    points.append(boundary)
+                # If boundary is empty or GeometryCollection, skip
+            elif geom.geom_type == 'MultiLineString':
+                for line in geom.geoms:
+                    points.extend(extract_points(line))
+            elif geom.geom_type == 'GeometryCollection':
+                for sub_geom in geom.geoms:
+                    points.extend(extract_points(sub_geom))
+
+            return points
+
+        # Extract all points from the intersection
+        all_points = extract_points(intersection)
+
+        if not all_points:
+            return None
+
+        # Find the furthest point from the agent
+        furthest = max(all_points, key=lambda p: p.distance(ray_start))
+        return (furthest.x, furthest.y)
+
+
+    def get_target_boundary_point(self, room_boundary, agent_pos_with_rtn):
+        """
+        Get the target boundary point for perimeter navigation.
+        This returns the furthest boundary point in the agent's line of sight.
+        """
+
+        room_boundary_poly = Polygon(room_boundary)
+        agent_x = agent_pos_with_rtn[0]
+        agent_y = agent_pos_with_rtn[1]
+
+        print("WITHIN BOUNDS: ", room_boundary_poly.contains(Point(agent_x, agent_y)))
+
+        agent_rtn = agent_pos_with_rtn[2]
+        agent_pos = (agent_x, agent_y)
+
+        # Convert heading to math angle (0=right, counterclockwise)
+        heading_rad = math.radians(agent_rtn)
+        math_angle = -heading_rad + math.pi / 2
+
+        # Use the ray casting approach
+        target = self.find_furthest_boundary_point_raycast(
+            agent_pos, math_angle, room_boundary_poly, max_distance=10.0
+        )
+
+        if target is None:
+            # Fallback: use sampling
+            target = self.find_furthest_boundary_point(
+                agent_pos, math_angle, room_boundary_poly, max_distance=10.0
+            )
+
+        return target
+
 if __name__ == "__main__":
     bc = BoundaryCalculations()
     # #
@@ -920,7 +1057,8 @@ if __name__ == "__main__":
 
     room_boundary = separated_boundaries[-1]
     room_boundary_poly = Polygon(room_boundary)
-    looking_at = bc.find_first_boundary_point((6.907, 6.908), -math.radians(135) + math.pi / 2.0, room_boundary_poly)
+    #looking_at = bc.find_first_boundary_point((6.907, 6.908), -math.radians(135) + math.pi / 2.0, room_boundary_poly)
+    looking_at = bc.get_target_boundary_point(room_boundary, (6.907, 6.908, 135.0))
     print("looking_at: ", looking_at)
     # now find the closest point on the boundary that matches the look_at point
     looking_at = min([(bc.euclidean_dist(p, looking_at), p) for p in room_boundary], key=lambda el: el[0])
@@ -928,7 +1066,7 @@ if __name__ == "__main__":
     print("looking_at: ", looking_at)
 
 
-    print("separated_boundaries[-1]")
+    print("separated_boundaries[-1]", len(separated_boundaries[-1]))
     bc.visualize(separated_boundaries[-1], {looking_at, (6.907, 6.908)})
     # for b in separated_boundaries:
     #     bc.visualize(b)

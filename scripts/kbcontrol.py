@@ -18,7 +18,8 @@ from ai2_thor_model_training.ae_utils import (NavigationUtils, NavigationActions
                                                               action_to_index, index_to_action, inverted_action_mapping,
                                                               AI2THORUtils, get_path_length, get_centre_of_the_room,
                                                               room_this_point_belongs_to, get_rooms_ground_truth,
-                                                              create_full_grid_from_room_layout, add_buffer_to_unreachable)
+                                                              create_full_grid_from_room_layout, add_buffer_to_unreachable,
+                                                              angle_to_turn_to_face_p2_from_p1, deg_to_rtn)
 
 from ai2_thor_model_training.training_data_extraction import RobotNavigationControl
 
@@ -26,6 +27,8 @@ from thortils.agent import thor_reachable_positions, thor_agent_position, thor_a
 from thortils.utils import roundany, PriorityQueue, normalize_angles, euclidean_dist
 
 import numpy as np
+import matplotlib.pyplot as plt
+import random
 
 #from ae_path_compare import PathCompareClient
 
@@ -299,6 +302,7 @@ from boundary_calculations import BoundaryCalculations
 def main(init_func=None, step_func=None):
     bc = BoundaryCalculations()
     USE_RNC = True
+    VISIBLE_DOORS_ONLY = True
     if USE_RNC:
         rnc = RobotNavigationControl()
     parser = argparse.ArgumentParser(
@@ -339,7 +343,7 @@ def main(init_func=None, step_func=None):
     # insane grid locations (e.g. with 0.15 we get (0.39999961853027344, 5.75), which shouldn't be possible).
     # I'm not sure why this happens.
     controller = thortils.launch_controller({"scene": args.scene,
-                                             "VISIBILITY_DISTANCE": 3.0,
+                                             "VISIBILITY_DISTANCE": 30.0,
                                              "RENDER_INSTANCE_SEGMENTATION": True,
                                              "IMAGE_WIDTH": 600,
                                              "IMAGE_HEIGHT": 600,
@@ -379,6 +383,28 @@ def main(init_func=None, step_func=None):
     #event = controller.step(action="GetReachablePositions")
     #r_positions = event.metadata["actionReturn"]
     #r_positions = [(pos['x'], pos['z']) for pos in r_positions]
+
+    #print("reachable_positions: ", reachable_positions)
+    # Find a position from where a door is visible
+    if VISIBLE_DOORS_ONLY:
+        rotations = [0, 45, 90, 135, 180, 225, 270, 315]
+        all_visible_doors = nu.get_all_visible_doors(controller)
+        while len(all_visible_doors) < 1:
+            # select the position from reachable positions
+            pos_to_use = random.sample(reachable_positions, 1)[0]
+            rtn_to_use = random.sample(rotations, 1)[0]
+            if USE_RNC:
+                place_with_rtn = (pos_to_use[0], pos_to_use[1], rtn_to_use)
+                rnc.teleport_to(place_with_rtn)
+            else:
+                action = controls['t']
+                params = constants.MOVEMENT_PARAMS[action]
+                params["position"] = dict(x=pos_to_use[0], y=0.9009997844696045, z=pos_to_use[1])
+                params["rotation"] = dict(x=0.0, y=rtn_to_use, z=0.0)
+                event = controller.step(action=action, **params)
+                event = controller.step(action="Pass")
+            all_visible_doors = nu.get_all_visible_doors(controller)
+
 
     rooms_in_habitat = get_rooms_ground_truth(house)
     #print(house["rooms"])
@@ -483,7 +509,7 @@ def main(init_func=None, step_func=None):
                 #print("MOVE PARAMS: ", params)
                 if USE_RNC:
                     #raw_action = index_to_action(int(action['action']))
-                    rnc.execute_action(action, moveMagnitude=grid_size, grid_size=grid_size, adhere_to_grid=True)
+                    rnc.execute_action(action, degrees=5, moveMagnitude=grid_size, grid_size=grid_size, adhere_to_grid=True)
                 else:
                     event = controller.step(action=action, **params)
 
@@ -526,14 +552,28 @@ def main(init_func=None, step_func=None):
             cur_pos = get_agent_pos_and_rotation(controller)
             place_with_rtn = (cur_pos[0][0], cur_pos[0][2], cur_pos[1][1])
 
+            all_visible_doors = nu.get_all_visible_doors(controller)
+            print("DOORVIS: ", len(all_visible_doors))
+            #print(all_visible_doors)
+
             try:
                 if current_target_point == None:
-                    current_target_point, all_door_targets = nu.find_door_target(place_with_rtn,
-                                                                                 rooms_in_habitat,
-                                                                                 reachable_positions,
-                                                                                 house,
-                                                                                 controller, close_enough=0.25,
-                                                                                 step=grid_size, extend_path=True)
+                    if VISIBLE_DOORS_ONLY:
+                        current_target_point, all_door_targets, door_pos = nu.find_door_target(place_with_rtn,
+                                                                                     rooms_in_habitat,
+                                                                                     reachable_positions,
+                                                                                     house,
+                                                                                     controller, close_enough=0.25,
+                                                                                     step=grid_size, extend_path=True,
+                                                                                     visible_only = VISIBLE_DOORS_ONLY, debug=True)
+                    else:
+                        current_target_point, all_door_targets = nu.find_door_target(place_with_rtn,
+                                                                                     rooms_in_habitat,
+                                                                                     reachable_positions,
+                                                                                     house,
+                                                                                     controller, close_enough=0.25,
+                                                                                     step=grid_size, extend_path=True,
+                                                                                     visible_only = VISIBLE_DOORS_ONLY)
                     #current_target_point = current_target_point[0]
                     t1 = time.time()
 
@@ -545,7 +585,10 @@ def main(init_func=None, step_func=None):
                                                                step=grid_size, debug=False)
                     print("AE: path plan time: ", (time.time() - t1))
                 # if we've been successful so far, then we can now look up room type
-                trg_pos_xy = (current_target_point.x, "", current_target_point.y)
+                if VISIBLE_DOORS_ONLY:
+                    trg_pos_xy = (door_pos[0], "", door_pos[1])
+                else:
+                    trg_pos_xy = (current_target_point.x, "", current_target_point.y)
                 #self.target_room = room_this_point_belongs_to(self.rooms_in_habitat, trg_pos_xy)
             except ValueError as e:
                 path_length = 0
@@ -556,7 +599,23 @@ def main(init_func=None, step_func=None):
             print("AE: Path: ", len(cur_path), "v@@ ", cur_path)
 
             cur_pos_xy = (cur_pos[0][0], cur_pos[0][2])
+            #print("AE: current_target_point: ", current_target_point, " cur_pos_xy: ", cur_pos_xy, cur_pos[1])
+            angle = angle_to_turn_to_face_p2_from_p1(cur_pos_xy, (trg_pos_xy[0], trg_pos_xy[2]), cur_pos[1][1])
+            #comp = deg_to_rtn(angle - cur_pos[1][1])
+            # raw_comp = (angle + 90 - cur_pos[1][1])
+            # comp = raw_comp
+            # while comp < -180:
+            #     comp += 360
+            # while comp > 180:
+            #     comp -= 360
+            print("AE: angle_to_door: ", angle, " agent_angle: ", cur_pos[1][1], " cur_pos_xy: ", cur_pos_xy, " trg: ", (current_target_point.x, current_target_point.y))
+
             current_room = room_this_point_belongs_to(rooms_in_habitat, cur_pos[0])
+            # fig, ax = plt.subplots(figsize=(10, 8))
+            # ax.scatter([current_target_point.x], [current_target_point.y],
+            #                      s=10, c='green', alpha=0.3,
+            #                      label='Reachable', zorder=2)
+            # plt.show(block=False)
 
             if starting_room is not None and current_room != starting_room:
                 steps_in_new_room += 1
@@ -589,8 +648,6 @@ def main(init_func=None, step_func=None):
                 is_stop_simul = False
                 is_first = True
 
-            all_visible_doors = nu.get_all_visible_doors(controller)
-            print("DOORVIS: ", len(all_visible_doors))
             print(room_of_placement)
 
             room_polygon = prep(Polygon(room_of_placement[1]))
@@ -620,9 +677,13 @@ def main(init_func=None, step_func=None):
 
             if looking_at is not None:
                 # Visualize path and obstructed space
-                atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, ((looking_at[0], 0, looking_at[1]), (0,0,0)), dest,
-                                   show_unreachable_pos = False,
-                                   show_reachable_pos = False)
+                atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat,
+                                    ((current_target_point.x, 0, current_target_point.y), (0, 0, 0)), dest,
+                                    show_unreachable_pos=False,
+                                    show_reachable_pos=False)
+                # atu.visualise_path2(boundary_points, reachable_positions, unreachable_positions, rooms_in_habitat, ((looking_at[0], 0, looking_at[1]), (0,0,0)), dest,
+                #                    show_unreachable_pos = False,
+                #                    show_reachable_pos = False)
                 # atu.visualise_path2(separated_boundaries[-1], reachable_positions, unreachable_positions, rooms_in_habitat, start, dest,
                 #                    show_unreachable_pos = False,
                 #                    show_reachable_pos = False)
